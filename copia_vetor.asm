@@ -1,4 +1,4 @@
-                        .model small
+.model small
 .stack 100H
 .data
     TAM EQU 5  
