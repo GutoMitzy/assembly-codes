@@ -29,19 +29,45 @@ TITULO_GAMEOVER db "   _____          __  __ ______ ", 13, 10
                 db "  \____/   \/   |______|_|  \_\ ", 13, 10
                 db 0     
 
-CORACAO_SPRITE db "001100110011001100"
-               db "001100110011001100"
-               db "110011001111111111"
-               db "110011001111111111"
-               db "110011001111111111"
-               db "110011001111111111"
-               db "001100110011111100"
-               db "001100110011111100"
-               db "001100110011111100"
-               db "001100110011111100"
-               db "000011001100110000"
-               db "000011001100110000"
-               db 0
+                ;1coracao
+CORACAO1_SPRITE db"0011001100"
+                db"0011001100"
+                db"1111111111"
+                db"1111111111"
+                db"1111111111"
+                db"1111111111"
+                db"0011111100"
+                db"0011111100"
+                db"0011111100"
+                db"0011111100"
+                db"0000110000"
+                db"0000110000"
+                ;2coracoes
+CORACAO2_SPRITE db "00110011001100"
+                db "00110011001100"
+                db "11001111111111"
+                db "11001111111111"
+                db "11001111111111"
+                db "11001111111111"
+                db "00110011111100"
+                db "00110011111100"
+                db "00110011111100"
+                db "00110011111100"
+                db "00001100110000"
+                db "00001100110000"
+                ;3coracoes
+CORACAO3_SPRITE db "001100110011001100"
+                db "001100110011001100"
+                db "110011001111111111"
+                db "110011001111111111"
+                db "110011001111111111"
+                db "110011001111111111"
+                db "001100110011111100"
+                db "001100110011111100"
+                db "001100110011111100"
+                db "001100110011111100"
+                db "000011001100110000"
+                db "000011001100110000"
 
 RELOGIO_SPRITE db "0011100"
                db "0110110"
@@ -51,9 +77,9 @@ RELOGIO_SPRITE db "0011100"
                db "1111111"
                db "0111110"
                db "0011100"
-               db 0
-
-NAVE1_SPRITE db "00000000000000"
+               
+             ;nave1
+NAVES_SPRITE db "00000000000000"
              db "00000000000000"
              db "00000000000000"
              db "00000011000000"
@@ -67,9 +93,8 @@ NAVE1_SPRITE db "00000000000000"
              db "00000000000000"
              db "00000000000000"
              db "00000000000000"
-             db 0
-
-NAVE2_SPRITE db "00000011000000"
+             ;nave2
+             db "00000011000000"
              db "00000111100000"
              db "00001111110000"
              db "00001111110000"
@@ -83,9 +108,8 @@ NAVE2_SPRITE db "00000011000000"
              db "11111100111111"
              db "01111000011110"
              db "00110000001100"
-             db 0
-
-NAVE3_SPRITE db "00000000000000"
+             ;nave3
+             db "00000000000000"
              db "00000000000000"
              db "00000000000000"
              db "00000222200000"
@@ -99,7 +123,6 @@ NAVE3_SPRITE db "00000000000000"
              db "00000000000000"
              db "00000000000000"
              db "00000000000000"
-             db 0
 
 JIPE_SPRITE db "00000000000111110000"
             db "00000030001112222000"
@@ -111,7 +134,76 @@ JIPE_SPRITE db "00000000000111110000"
             db "23330233300000233300"
             db "33320333200000333200"
             db "02300023000000023000"
-            db 0
+            
+                ;cratera1
+CRATERAS_SPRITE db "22000000000022"
+                db "22000000000021"
+                db "12220000000221"
+                db "11122000000211"
+                db "11122000002111"
+                db "11211200021111"
+                db "11111122211111"
+                ;cratera2
+                db "20000000000222"
+                db "12000000000211"
+                db "11220000002211"
+                db "11112200022111"
+                db "11111220021111"
+                db "11111212221111"
+                db "11111111211111"
+                ;cratera3
+                db "22200000000222"
+                db "11200000002111"
+                db "11200000022111"
+                db "11200000221111"
+                db "11122000211111"
+                db "11112002111111"
+                db "11121222111111"
+                
+              ;rocha1
+ROCHAS_SPRITE db "000000000000"
+              db "000000000000"
+              db "000000000000"
+              db "000000000000"
+              db "000000000000"
+              db "000000000000"
+              db "000120000000"
+              db "001220000000"
+              db "012121000000"
+              db "111111200000"
+              ;rocha2
+              db "000000000000"
+              db "000000000000"
+              db "000000000000"
+              db "000120000000"
+              db "001111020000"
+              db "001211220000"
+              db "011112222000"
+              db "011112112000"
+              db "211211122200"
+              db "112111221220"
+              ;rocha3
+              db "000002222000"
+              db "000011122000"
+              db "000021112200"
+              db "000021112220"
+              db "001211112200"
+              db "001111122200"
+              db "011121112000"
+              db "011211112200"
+              db "211112122220"
+              db "221111112222"
+              ;rocha4
+              db "000022200000"
+              db "000112220000"
+              db "001121220000"
+              db "001211220000"
+              db "011111222200"
+              db "011112111220"
+              db "011111111220"
+              db "011112112122"
+              db "111121111111"
+              db "111111111111"
 
 TERRENO_LONGE_SPRITE db "0000000000000000000002200000000000000000"
     db "0000000000000000000000000000000000000000"
@@ -810,19 +902,23 @@ COR_GAMEOVER        db 0, 04H              ; vermelho
 
 COR_BOTAO           db 0, 0FH              ; branco
 COR_SELEC           db 0, 0CH              ; vermelho-claro (op??o selecionada)
-COR_CORACAO         db 0, 04H              ; vermelho
+COR_CORACAO         db 0, 0CH              ; vermelho-claro
 COR_RELOGIO         db 0, 0EH              ; amarelo
+COR_SUPERFICIE      equ 0EH                    ; amarelo
 
 NAVE_PALETA         db 0, 09H, 0EH, 04H
 JIPE_PALETA         db 0, 0CH, 09H, 01H, 04H
 TERRENO_LONGE_PALETA db 0, 01H, 09H
 TERRENO_PERTO_PALETA db 0, 0AH, 02H
+CRATERA_PALETA      db 0, 0EH, 06H
+ROCHA_PALETA        db 0, 06H, 04H
 
 ; =====================
 ; ELEMENTOS B?SICOS DA INTERFACE
 ; =====================
 LARG_TELA equ 320
 ALT_TELA  equ 200
+
 LARGURA   equ 5                              ; largura do glifo (px)
 ALTURA    equ 8                              ; altura do glifo (px)
 
@@ -882,8 +978,9 @@ OPCAO_SEL   db 0
 ; =====================
 ; CORA??O
 ; =====================
-LARGURA_CORACAO equ 18
-ALTURA_CORACAO  equ 12
+CORACOES  dw offset CORACAO1_SPRITE, offset CORACAO2_SPRITE, offset CORACAO3_SPRITE
+CORACAO_LARG dw 10, 14, 18
+ALTURA_CORACAO equ 12                    
 
 ; =====================
 ; REL?GIO
@@ -896,6 +993,7 @@ ALTURA_RELOGIO  equ 8
 ; =====================
 LARGURA_NAVE equ 14
 ALTURA_NAVE  equ 14
+TAM_NAVE     equ LARGURA_NAVE * ALTURA_NAVE      ; 196 bytes por nave
 
 ; =====================
 ; JIPE
@@ -906,6 +1004,9 @@ ALTURA_JIPE  equ 10
 ; =====================
 ; TERRENOS
 ; =====================
+ALTURA_SUPERFICIE equ 7
+Y_SUPERFICIE equ ALT_TELA - ALTURA_SUPERFICIE
+
 ALTURA_REGIAO   equ 95                          ; limite da regiao montanhosa
 LINHAS_ASCII     equ 42
 ALTURA_TERRENO   equ 60
@@ -916,6 +1017,20 @@ Y_PERTO         equ ALT_TELA - ALTURA_TERRENO     ; 140: perto colado no rodape
 
 PREENCHE_LONGE      equ ALT_TELA - (Y_LONGE + LINHAS_ASCII)   ; 53 linhas
 PREENCHE_PERTO      equ ALT_TELA - (Y_PERTO + LINHAS_ASCII)   ; 18 linhas
+
+; =====================
+; ROCHAS
+; =====================
+LARGURA_ROCHA equ 12
+ALTURA_ROCHA  equ 10
+TAM_ROCHA     equ LARGURA_ROCHA * ALTURA_ROCHA      ; 120 bytes por rocha 
+
+; =====================
+; CRATERAS
+; ===================== 
+LARGURA_CRATERA equ 14
+ALTURA_CRATERA  equ 7
+TAM_CRATERA     equ LARGURA_CRATERA * ALTURA_CRATERA      ; 98 bytes por cratera
 
 ; Caractere ASCII de cada glifo, na posi??o do seu ?ndice
 ; (?ndices 10 a 15 s?o de moldura e n?o t?m ASCII: ficam com 0)
@@ -1480,19 +1595,22 @@ MENU_INICIAL proc
     mov DX, ALTURA_JIPE
     call DESENHA_ASCII_PALETA
 
+    ; nave 1
     mov ASCII_X, 140
-    mov SI, offset NAVE1_SPRITE
+    mov SI, offset NAVES_SPRITE
     mov BX, offset NAVE_PALETA
     mov CX, LARGURA_NAVE
     mov DX, ALTURA_NAVE
     call DESENHA_ASCII_PALETA
 
+    ; nave 2 (BX, CX e DX continuam os mesmos)
     mov ASCII_X, 170
-    mov SI, offset NAVE2_SPRITE
+    mov SI, offset NAVES_SPRITE + TAM_NAVE
     call DESENHA_ASCII_PALETA
 
+    ; nave 3
     mov ASCII_X, 200
-    mov SI, offset NAVE3_SPRITE
+    mov SI, offset NAVES_SPRITE + 2 * TAM_NAVE
     call DESENHA_ASCII_PALETA
 
     call DESENHAR_BOTOES
@@ -1512,13 +1630,14 @@ INICIA_JOGO proc
 
     mov ASCII_X, 5
     mov ASCII_Y, 5
-    mov SI, offset CORACAO_SPRITE
+    mov SI, CORACOES[4]
     mov BX, offset COR_CORACAO
-    mov CX, LARGURA_CORACAO
+    mov CX, CORACAO_LARG[4]
     mov DX, ALTURA_CORACAO
     call DESENHA_ASCII_PALETA
 
     mov ASCII_X, 280
+    mov ASCII_Y, 7
     mov SI, offset RELOGIO_SPRITE
     mov BX, offset COR_RELOGIO
     mov CX, LARGURA_RELOGIO
@@ -1552,6 +1671,20 @@ INICIA_JOGO proc
     mov CX, LARG_TELA
     mov DX, PREENCHE_PERTO
     call PREENCHER_LINHAS
+    
+    mov ASCII_Y, Y_SUPERFICIE
+    mov AL, COR_SUPERFICIE
+    mov CX, LARG_TELA
+    mov DX, ALTURA_SUPERFICIE
+    call PREENCHER_LINHAS
+    
+    mov ASCII_X, 10 
+    sub ASCII_Y, ALTURA_JIPE    
+    mov SI, offset JIPE_SPRITE
+    mov BX, offset JIPE_PALETA
+    mov CX, LARGURA_JIPE
+    mov DX, ALTURA_JIPE
+    call DESENHA_ASCII_PALETA
     
     mov AH, 00H
     int 16H                                  ; espera uma tecla
