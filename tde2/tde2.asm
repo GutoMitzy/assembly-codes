@@ -554,7 +554,6 @@ TERRENO_LONGE_SPRITE db "0000000000000000000002200000000000000000"
     db "1111111111111111111111111111111111111111"
     db "1111111111111111111111111111111111111111"
     db "1111111111111111111111111111111111111111"
-    db 0
 
 TERRENO_PERTO_SPRITE db "0000000000000000000000000000000000000000"
     db "0000000000000000000000000000000000000000"
@@ -892,7 +891,6 @@ TERRENO_PERTO_SPRITE db "0000000000000000000000000000000000000000"
     db "1111111111111111111111111111111111111111"
     db "1111111111111111111111111111111111111111"
     db "1111111111111111111111111111111111111111"
-    db 0
                       
 ; =====================
 ; CORES
@@ -906,7 +904,9 @@ COR_BOTAO           db COR_FUNDO, 0FH              ; branco
 COR_SELEC           db COR_FUNDO, 0CH              ; vermelho-claro (op??o selecionada)
 COR_CORACAO         db COR_FUNDO, 0CH              ; vermelho-claro
 COR_RELOGIO         db COR_FUNDO, 0EH              ; amarelo
-COR_SUPERFICIE      equ 0EH                    ; amarelo
+COR_SUPERFICIE      equ 0EH                        ; amarelo
+COR_SCORE           db COR_FUNDO, 0FH                        ; branco
+COR_TEMPO           db COR_FUNDO, 0CH                        ; vermelho-claro
 
 NAVE_PALETA         db COR_FUNDO, 09H, 0EH, 04H
 JIPE_PALETA         db COR_FUNDO, 0CH, 09H, 01H, 04H
@@ -1050,6 +1050,23 @@ NAVE_VEL     dw 2                    ; velocidade em pixels por quadro (negativo
 
 JIPE_X      dw 10                    ; X atual do jipe
 JIPE_Y      equ Y_SUPERFICIE - ALTURA_JIPE
+JIPE_VEL    dw 1                     ; 1 pixel para a direita por frame
+TECLA_ESQ   db 0
+TECLA_DIR   db 0
+
+; =====================
+; SCORE/TEMPO
+; =====================
+SCORE_INICIAL db "0000", 0
+TEMPO_INICIAL dw 10
+TEMPO_DECORRIDO dw 0
+TEMPO_TEXTO     db "10", 0
+
+; =====================
+; ???
+; =====================
+OLD_INT09_OFF dw 0
+OLD_INT09_SEG dw 0
 
 ; Caractere ASCII de cada glifo, na posi??o do seu ?ndice
 ; (?ndices 10 a 15 s?o de moldura e n?o t?m ASCII: ficam com 0)
@@ -1155,6 +1172,139 @@ fim_conversao:
     pop BX
     ret
 ASCII_PARA_INDICE endp
+
+CONTAGEM_TEMPO proc
+    push BX
+    push DX
+
+    mov AL, 0
+
+    mov AH, 00H
+    int 1AH
+
+    mov BX, DX
+    sub BX, TEMPO_DECORRIDO
+
+    cmp BX, 18
+    jb contagem_fim
+
+    add TEMPO_DECORRIDO, 18
+
+    dec TEMPO_INICIAL
+
+    mov AX, TEMPO_INICIAL
+    xor DX, DX
+    mov BX, 10
+    div BX
+
+    add AL, '0'
+    mov TEMPO_TEXTO[0], AL
+
+    add DL, '0'
+    mov TEMPO_TEXTO[1], DL
+
+    mov AL, 1
+
+    cmp TEMPO_INICIAL, 0
+    jne contagem_fim
+
+contagem_fim:
+    pop DX
+    pop BX
+    ret
+CONTAGEM_TEMPO endp
+
+; ---------------------------------------------------------------------
+; ATUALIZA_TEMPO: limpa e redesenha o tempo na HUD
+; Entrada: TEMPO_TEXTO = tempo atual convertido para ASCII
+;          ES = 0A000H; DF = 0 (CLD)
+; Sa?da: tempo atual desenhado na tela
+; ---------------------------------------------------------------------
+ATUALIZA_TEMPO proc
+    push AX
+    push CX
+    push DX
+    push DI
+    push SI
+
+    mov ASCII_X, 300
+    mov ASCII_Y, 6
+
+    mov AL, COR_FUNDO
+    mov CX, 2 * (LARGURA + 1)
+    mov DX, ALTURA
+    call PREENCHER_LINHAS
+
+    mov ASCII_X, 300
+    mov ASCII_Y, 6
+    mov SI, offset TEMPO_TEXTO
+    mov DI, offset COR_TEMPO
+    mov CX, 6
+    mov DX, 8
+    call ESCREVER_TEXTO
+
+    pop SI
+    pop DI
+    pop DX
+    pop CX
+    pop AX
+    ret
+ATUALIZA_TEMPO endp
+
+; ---------------------------------------------------------------------
+; TRATA_TECLADO: atualiza o estado das setas durante a interrupcao
+;                 do teclado
+; Entrada: AL = scan code recebido da porta 60H
+; Saida: TECLA_ESQ = 1 enquanto seta esquerda estiver pressionada
+;        TECLA_DIR = 1 enquanto seta direita estiver pressionada
+; ---------------------------------------------------------------------
+TRATA_TECLADO proc far
+    push AX
+    push DS
+
+    mov AX, @data
+    mov DS, AX
+
+    in AL, 60H
+
+    cmp AL, 4BH
+    je tecla_esq_press
+
+    cmp AL, 0CBH
+    je tecla_esq_solto
+
+    cmp AL, 4DH
+    je tecla_dir_press
+
+    cmp AL, 0CDH
+    je tecla_dir_solto
+
+    jmp teclado_fim
+
+tecla_esq_press:
+    mov TECLA_ESQ, 1
+    jmp teclado_fim
+
+tecla_esq_solto:
+    mov TECLA_ESQ, 0
+    jmp teclado_fim
+
+tecla_dir_press:
+    mov TECLA_DIR, 1
+    jmp teclado_fim
+
+tecla_dir_solto:
+    mov TECLA_DIR, 0
+
+teclado_fim:
+    pop DS
+    pop AX
+
+    push OLD_INT09_SEG
+    push OLD_INT09_OFF
+    retf
+
+TRATA_TECLADO endp
 
 ; ---------------------------------------------------------------------
 ; DESENHA_CARACTERE: desenha um glifo da fonte bitmap na VRAM
@@ -1826,12 +1976,6 @@ botoes_tecla:
     mov AH, 00H
     int 16H                          ; consome a tecla: AH = scan code, AL = ASCII
 
-    mov AH, 01H
-    int 16H                          ; ZF = 1 se nao ha tecla (nao espera)
-    jz  botoes_tecla                 ; sem tecla: proximo quadro
-    mov AH, 00H
-    int 16H                          ; consome a tecla: AH = scan code, AL = ASCII
-    
     cmp AH, 48H                      ; seta para cima
     je  botoes_cima
     cmp AH, 50H                      ; seta para baixo
@@ -1839,14 +1983,15 @@ botoes_tecla:
     cmp AL, 13                       ; Enter
     je  botoes_enter
     jmp botoes_tecla                 ; outra tecla: ignora
+
 botoes_cima:
-    cmp OPCAO_SEL, 0                         ; ja na primeira opcao
+    cmp OPCAO_SEL, 0                 ; ja na primeira opcao
     je  botoes_tecla
     dec OPCAO_SEL
     jmp botoes_redesenha
 
 botoes_baixo:
-    cmp OPCAO_SEL, NUM_OPCOES - 1            ; ja na ultima opcao
+    cmp OPCAO_SEL, NUM_OPCOES - 1    ; ja na ultima opcao
     jae botoes_tecla
     inc OPCAO_SEL
     jmp botoes_redesenha
@@ -1924,13 +2069,7 @@ MENU_INICIAL proc
     ret
 MENU_INICIAL endp
 
-; ---------------------------------------------------------------------
-; INICIA_JOGO: inicializa os elementos do jogo
-; ---------------------------------------------------------------------
-INICIA_JOGO proc
-    call LIMPAR_TELA
-    
-    mov JIPE_X, 10
+EXIBE_STATUS proc
     mov ASCII_X, 5
     mov ASCII_Y, 5
     mov SI, CORACOES[4]
@@ -1938,14 +2077,43 @@ INICIA_JOGO proc
     mov CX, CORACAO_LARG[4]
     mov DX, ALTURA_CORACAO
     call DESENHA_ASCII_PALETA
+    
+    ; score 0000
+    mov ASCII_X, (LARG_TELA - 4 * (LARGURA + 1)) / 2
+    mov SI, offset SCORE_INICIAL
+    mov DI, offset COR_SCORE
+    mov CX, 6
+    mov DX, 8
+    call ESCREVER_TEXTO
 
-    mov ASCII_X, 280
-    mov ASCII_Y, 7
+    mov ASCII_X, 290
+    mov ASCII_Y, 5
     mov SI, offset RELOGIO_SPRITE
     mov BX, offset COR_RELOGIO
     mov CX, LARGURA_RELOGIO
     mov DX, ALTURA_RELOGIO
     call DESENHA_ASCII_PALETA
+
+    ; tempo 60
+    add ASCII_X, 10
+    add ASCII_Y, 1
+    mov SI, offset TEMPO_TEXTO
+    mov DI, offset COR_TEMPO
+    mov CX, 6
+    mov DX, 8
+    call ESCREVER_TEXTO
+
+    ret
+EXIBE_STATUS endp
+
+; ---------------------------------------------------------------------
+; INICIA_JOGO: inicializa os elementos do jogo
+; ---------------------------------------------------------------------
+INICIA_JOGO proc
+    call LIMPAR_TELA
+    mov JIPE_X, 10
+
+    call EXIBE_STATUS
     
     mov ASCII_X, 0
     mov ASCII_Y, Y_LONGE
@@ -1989,49 +2157,62 @@ INICIA_JOGO proc
     mov DX, ALTURA_JIPE
     call DESENHA_ASCII_PALETA
     
+    mov AH, 00H
+    int 1AH
+    mov TEMPO_DECORRIDO, DX
+    
 jogo_loop:
     call ESPERA_RETRACO
 
-    mov AX, NAVE_X
-    mov ASCII_X, AX
-    mov ASCII_Y, NAVE_Y
-    mov SI, offset NAVES_SPRITE
-    mov BX, offset NAVE_PALETA
-    mov CX, LARGURA_NAVE
-    mov DX, ALTURA_NAVE
-    mov DI, MODO_REAPARECE           ; <- modo escolhido aqui
-    mov FUNDO_COR, COR_FUNDO
-    mov AX, NAVE_VEL
-    call MOVER_SPRITE
-    mov AX, ASCII_X
-    mov NAVE_X, AX
+    call CONTAGEM_TEMPO
+    cmp AL, 1
+    jne verifica_teclado
 
-    ; teclado (nao espera)
+    cmp TEMPO_INICIAL, 0
+    je jogo_fim
+
+    call ATUALIZA_TEMPO
+
+verifica_teclado:
+    ; teclado para Esc
     mov AH, 01H
-    int 16H                          ; ZF = 1 se nao ha tecla
-    jz  jogo_volta
+    int 16H
+    jz  atualiza_jipe
+
     mov AH, 00H
-    int 16H                          ; AH = scan code, AL = ASCII
-    cmp AL, 1BH                      ; Esc encerra
+    int 16H
+    cmp AL, 1BH
     je  jogo_fim
-    cmp AH, 4BH                      ; seta esquerda
-    je  jipe_esq
-    cmp AH, 4DH                      ; seta direita
-    jne jogo_volta
-    mov AX, 4
-    jmp jipe_move
-jipe_esq:
-    mov AX, -4
 
-jipe_move:
+atualiza_jipe:
+    ; velocidade normal: direita
+    mov JIPE_VEL, 1
+
+    ; seta esquerda: anda para a esquerda
+    cmp TECLA_ESQ, 1
+    jne verifica_direita
+    mov JIPE_VEL, -1
+
+verifica_direita:
+    ; seta direita: aumenta a velocidade para a direita
+    cmp TECLA_DIR, 1
+    jne move_jipe
+    mov JIPE_VEL, 2
+
+move_jipe:
+    mov AX, JIPE_VEL
+
     mov DX, JIPE_X
-    add DX, AX                       ; novo X
-    cmp DX, 0
-    jl  jogo_volta                   ; sairia pela esquerda: ignora
-    cmp DX, LARG_TELA - LARGURA_JIPE
-    jg  jogo_volta                   ; sairia pela direita: ignora
+    add DX, AX
 
-    push AX                          ; guarda o deslocamento
+    cmp DX, 0
+    jl  jogo_volta
+
+    cmp DX, LARG_TELA - LARGURA_JIPE
+    jg  jogo_volta
+
+    push AX
+
     mov AX, JIPE_X
     mov ASCII_X, AX
     mov ASCII_Y, JIPE_Y
@@ -2039,16 +2220,18 @@ jipe_move:
     mov BX, offset JIPE_PALETA
     mov CX, LARGURA_JIPE
     mov DX, ALTURA_JIPE
+
     mov AL, [TERRENO_PERTO_PALETA + 1]
-    mov FUNDO_COR, AL                ; fundo do jipe = cor do terreno perto
+    mov FUNDO_COR, AL
+
     pop AX
-    mov DI, MODO_REAPARECE
     call MOVER_SPRITE
+
     mov AX, ASCII_X
     mov JIPE_X, AX
 
 jogo_volta:
-    jmp jogo_loop                    ; salto longo: jz/jl direto sairiam do alcance
+    jmp jogo_loop
 
 jogo_fim:
     ret
@@ -2064,6 +2247,20 @@ start:
     mov AX, 0A000H
     mov ES, AX                               ; ES = segmento da VRAM
     cld                                      ; SI/DI incrementam
+    
+    mov AX, 3509H
+    int 21H
+
+    mov OLD_INT09_OFF, BX
+    mov OLD_INT09_SEG, ES
+
+    push DS
+    mov DX, offset TRATA_TECLADO
+    mov AX, SEG TRATA_TECLADO
+    mov DS, AX
+    mov AX, 2509H
+    int 21H
+    pop DS
 
     call MODO_VIDEO
 menu:
