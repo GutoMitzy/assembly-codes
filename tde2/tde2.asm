@@ -897,21 +897,23 @@ TERRENO_PERTO_SPRITE db "0000000000000000000000000000000000000000"
 ; =====================
 ; CORES
 ; =====================
-COR_TITULO          db 0, 0AH              ; verde-claro
-COR_GAMEOVER        db 0, 04H              ; vermelho
+COR_FUNDO    equ 0                   ; cor do fundo atras da nave (preto)
+FUNDO_COR           db COR_FUNDO                   ; cor usada para apagar sprites
+COR_TITULO          db COR_FUNDO, 0AH              ; verde-claro
+COR_GAMEOVER        db COR_FUNDO, 04H              ; vermelho
 
-COR_BOTAO           db 0, 0FH              ; branco
-COR_SELEC           db 0, 0CH              ; vermelho-claro (op??o selecionada)
-COR_CORACAO         db 0, 0CH              ; vermelho-claro
-COR_RELOGIO         db 0, 0EH              ; amarelo
+COR_BOTAO           db COR_FUNDO, 0FH              ; branco
+COR_SELEC           db COR_FUNDO, 0CH              ; vermelho-claro (op??o selecionada)
+COR_CORACAO         db COR_FUNDO, 0CH              ; vermelho-claro
+COR_RELOGIO         db COR_FUNDO, 0EH              ; amarelo
 COR_SUPERFICIE      equ 0EH                    ; amarelo
 
-NAVE_PALETA         db 0, 09H, 0EH, 04H
-JIPE_PALETA         db 0, 0CH, 09H, 01H, 04H
-TERRENO_LONGE_PALETA db 0, 01H, 09H
-TERRENO_PERTO_PALETA db 0, 0AH, 02H
-CRATERA_PALETA      db 0, 0EH, 06H
-ROCHA_PALETA        db 0, 06H, 04H
+NAVE_PALETA         db COR_FUNDO, 09H, 0EH, 04H
+JIPE_PALETA         db COR_FUNDO, 0CH, 09H, 01H, 04H
+TERRENO_LONGE_PALETA db COR_FUNDO, 01H, 09H
+TERRENO_PERTO_PALETA db COR_FUNDO, 0AH, 02H
+CRATERA_PALETA      db COR_FUNDO, 0EH, 06H
+ROCHA_PALETA        db COR_FUNDO, 06H, 04H
 
 ; =====================
 ; ELEMENTOS B?SICOS DA INTERFACE
@@ -924,6 +926,8 @@ ALTURA    equ 8                              ; altura do glifo (px)
 
 ASCII_X   dw 0
 ASCII_Y   dw 0
+
+PERIODO_TELA equ LARG_TELA + LARGURA_JIPE   ; percurso da volta: tela + maior sprite que reaparece
 
 ; =====================
 ; T?TULO
@@ -951,7 +955,7 @@ G_VERT       equ 15                          ; linha vertical
 NUM_GLYPHS   equ 42
 
 ; =====================
-; BOT?O MENU INICIAL
+; MENU INICIAL
 ; =====================
 TXT_JOGAR   db "Jogar", 0
 TXT_SAIR    db "Sair", 0
@@ -963,6 +967,8 @@ NUM_OPCOES  equ 2
 BTN_X       dw 0
 BTN_Y       dw 0
 BTN_TXT     dw 0                             ; endere?o do texto do bot?o
+
+SPRITES_MENU_X dw 140, 170, 200, 110   ; naves 1 a 3 e jipe
 
 ; opcoes do menu (o indice na tabela = valor de OPCAO_SEL)
 BOTOES_TXT   dw offset TXT_JOGAR, offset TXT_SAIR
@@ -1031,6 +1037,19 @@ TAM_ROCHA     equ LARGURA_ROCHA * ALTURA_ROCHA      ; 120 bytes por rocha
 LARGURA_CRATERA equ 14
 ALTURA_CRATERA  equ 7
 TAM_CRATERA     equ LARGURA_CRATERA * ALTURA_CRATERA      ; 98 bytes por cratera
+
+; =====================
+; MOVIMENTO
+; =====================
+MODO_REAPARECE equ 0                 ; sai por um lado e reaparece no outro
+MODO_SOME      equ 1                 ; sai e nao volta
+
+NAVE_X       dw 0                    ; X atual (com sinal)
+NAVE_Y       equ 70                  ; Y fixo da nave
+NAVE_VEL     dw 2                    ; velocidade em pixels por quadro (negativo = esquerda)
+
+JIPE_X      dw 10                    ; X atual do jipe
+JIPE_Y      equ Y_SUPERFICIE - ALTURA_JIPE
 
 ; Caractere ASCII de cada glifo, na posi??o do seu ?ndice
 ; (?ndices 10 a 15 s?o de moldura e n?o t?m ASCII: ficam com 0)
@@ -1263,36 +1282,6 @@ preencher_fim:
     ret
 PREENCHER_LINHAS endp
 
-;-------------------------------------------------------------------
-; GAME_OVER: limpa a tela, desenha o titulo de fim de jogo e espera
-;            uma tecla
-; Altera:  AX, CX, DX, SI, DI, ASCII_X e ASCII_Y
-;-------------------------------------------------------------------
-GAME_OVER proc
-    call LIMPAR_TELA
-    
-    mov DI, offset COR_GAMEOVER            
-    mov ASCII_X, X_INICIAL_TITULO              ; posi??o inicial do t?tulo
-    add ASCII_X, 65                            ; offset extra pelas 2 linhas            
-    mov ASCII_Y, Y_INICIAL_TITULO
-    mov CX, LARGURA_GAMEOVER                   ; avan?o em X
-    mov DX, ALTURA_GAMEOVER                    ; avan?o em Y
-    mov SI, offset TITULO_GAMEOVER
-    call ESCREVER_TEXTO
-    
-    mov ASCII_X, 50
-    mov ASCII_Y, 150
-    mov CX, LARGURA
-    mov DX, ALTURA
-    mov SI, offset TXT_GAMEOVER
-    call ESCREVER_TEXTO
-    
-    mov AH, 00H
-    int 16H                                  ; espera uma tecla
-    
-    ret
-GAME_OVER endp
-
 ; ---------------------------------------------------------------------
 ; ESCREVER_TEXTO: desenha um texto de uma ou varias linhas pixel a
 ;   pixel (CR ignorado, LF volta ao X inicial e desce uma linha,
@@ -1393,12 +1382,367 @@ caixa_meio:
 DESENHAR_CAIXA endp
 
 ; ---------------------------------------------------------------------
+; DESENHA_ASCII_PALETA: desenha um sprite colorido; o valor de cada
+;   pixel ? traduzido para uma cor por uma paleta (0 = transparente)
+; Entrada: SI = endere?o do sprite (uma linha ap?s a outra)
+;          BX = endere?o da paleta (tabela de cores indexada pelo
+;               valor do pixel)
+;          CX = largura do sprite (colunas)
+;          DX = altura do sprite (linhas)
+;          ASCII_X, ASCII_Y = canto superior esquerdo na tela
+;          ES = 0A000H; DF = 0 (CLD)
+; ---------------------------------------------------------------------
+DESENHA_ASCII_PALETA proc
+    push AX
+    push BX
+    push CX
+    push DX
+    push SI
+    push DI
+    push BP
+
+    mov BP, DX
+    mov AX, ASCII_Y
+    mov DX, LARG_TELA
+    mul DX
+    add AX, ASCII_X
+    mov DI, AX
+    mov DX, CX
+
+paleta_linha:
+    mov CX, DX
+
+paleta_pixel:
+    lodsb
+    sub AL, '0'
+    cmp AL, 0
+    je  paleta_vazio
+    xlat
+    stosb
+    jmp paleta_proximo
+
+paleta_vazio:
+    inc DI
+
+paleta_proximo:
+    loop paleta_pixel
+
+    add DI, LARG_TELA
+    sub DI, DX
+    dec BP
+    jnz paleta_linha
+
+    pop BP
+    pop DI
+    pop SI
+    pop DX
+    pop CX
+    pop BX
+    pop AX
+    ret
+DESENHA_ASCII_PALETA endp
+
+;-------------------------------------------------------------------
+; RECORTA_X: recorta um trecho horizontal ao que cabe na tela
+; Entrada: AX = X da primeira coluna (com sinal; pode ser negativo)
+;          CX = largura em pixels
+; Saida:   AX = X da primeira coluna visivel
+;          CX = colunas visiveis (0 se nada aparece)
+;-------------------------------------------------------------------
+RECORTA_X proc
+    push BX
+
+    cmp AX, 0
+    jge recorta_dir
+    mov BX, AX
+    neg BX                           ; BX = colunas cortadas a esquerda
+    cmp BX, CX
+    jae recorta_nada                 ; tudo fora pela esquerda
+    sub CX, BX                       ; colunas restantes
+    xor AX, AX                       ; primeira coluna visivel = 0
+
+recorta_dir:
+    mov BX, LARG_TELA
+    sub BX, AX                       ; BX = colunas ate a borda direita
+    jle recorta_nada                 ; tudo fora pela direita
+    cmp CX, BX
+    jbe recorta_fim
+    mov CX, BX                       ; corta o excesso a direita
+    jmp recorta_fim
+
+recorta_nada:
+    xor CX, CX
+
+recorta_fim:
+    pop BX
+    ret
+RECORTA_X endp
+
+;-------------------------------------------------------------------
+; APAGAR_SPRITE: cobre com uma cor o retangulo de um sprite,
+;                recortado nas bordas da tela
+; Entrada: AL = cor de fundo
+;          CX = largura do sprite, DX = altura do sprite
+;          ASCII_X (com sinal), ASCII_Y = canto superior esquerdo
+;          ES = 0A000H
+;-------------------------------------------------------------------
+APAGAR_SPRITE proc
+    push AX
+    push BX
+    push CX
+    push DX
+    push ASCII_X
+
+    mov BL, AL                       ; BL = cor
+    mov AX, ASCII_X
+    call RECORTA_X                   ; AX = X visivel, CX = largura visivel
+    jcxz apagar_fim                  ; nada visivel
+    mov ASCII_X, AX
+    mov AL, BL                       ; AL = cor
+    call PREENCHER_LINHAS
+
+apagar_fim:
+    pop ASCII_X
+    pop DX
+    pop CX
+    pop BX
+    pop AX
+    ret
+APAGAR_SPRITE endp
+
+;-------------------------------------------------------------------
+; DESENHA_SPRITE_RECORTADO: desenha um sprite de digitos com paleta,
+;                           so nas colunas que cabem na tela (usa
+;                           DESENHA_ASCII_PALETA, uma linha por vez)
+; Entrada: SI = endereco do sprite
+;          BX = endereco da paleta
+;          CX = largura do sprite, DX = altura do sprite
+;          ASCII_X (com sinal), ASCII_Y = canto superior esquerdo
+;          ES = 0A000H
+;-------------------------------------------------------------------
+DESENHA_SPRITE_RECORTADO proc
+    push AX
+    push BX
+    push CX
+    push DX
+    push SI
+    push DI
+    push BP
+    push ASCII_X
+    push ASCII_Y
+
+    mov BP, DX                       ; BP = linhas restantes
+    mov DI, CX                       ; DI = largura total (passo de linha)
+    mov AX, ASCII_X
+    call RECORTA_X                   ; AX = X visivel, CX = largura visivel
+    jcxz recortado_fim               ; nada visivel
+
+    mov DX, AX
+    sub DX, ASCII_X                  ; DX = colunas cortadas a esquerda
+    add SI, DX                       ; pula essas colunas na 1a linha
+    mov ASCII_X, AX                  ; desenha a partir da 1a coluna visivel
+    mov DX, 1                        ; uma linha por chamada
+
+recortado_linha:
+    call DESENHA_ASCII_PALETA
+    add SI, DI                       ; proxima linha do sprite
+    inc ASCII_Y
+    dec BP
+    jnz recortado_linha
+
+recortado_fim:
+    pop ASCII_Y
+    pop ASCII_X
+    pop BP
+    pop DI
+    pop SI
+    pop DX
+    pop CX
+    pop BX
+    pop AX
+    ret
+DESENHA_SPRITE_RECORTADO endp
+
+;-------------------------------------------------------------------
+; MOVER_SPRITE: move um sprite na horizontal: apaga na posicao atual
+;               com FUNDO_COR, soma o deslocamento ao X e desenha
+;               na nova posicao (recortado nas bordas). Quando o
+;               sprite sai por inteiro da tela, o modo decide: reaparece
+;               pelo lado oposto ou fica fora e nao volta
+; Entrada: AX = deslocamento em pixels (com sinal)
+;          DI = modo (MODO_REAPARECE ou MODO_SOME)
+;          SI = sprite, BX = paleta
+;          CX = largura, DX = altura
+;          ASCII_X = X atual (com sinal), ASCII_Y
+;          FUNDO_COR = cor de fundo; ES = 0A000H
+; Saida:   ASCII_X = novo X
+;          CF = 0: sprite ainda aparece (ou reapareceu)
+;          CF = 1: sprite saiu da tela (so no MODO_SOME)
+;-------------------------------------------------------------------
+MOVER_SPRITE proc
+    push AX
+    push BX
+    push CX
+    push DX
+    push BP
+
+    mov BP, AX                       ; BP = deslocamento
+    mov AL, FUNDO_COR
+    call APAGAR_SPRITE               ; apaga na posicao atual
+
+    mov AX, ASCII_X
+    add AX, BP                       ; AX = novo X
+    mov ASCII_X, AX
+
+    cmp BP, 0
+    jl  mover_esquerda
+
+    cmp AX, LARG_TELA                ; indo para a direita
+    jl  mover_visivel                ; ainda aparece
+    cmp DI, MODO_SOME
+    je  mover_some_dir
+    
+    sub AX, PERIODO_TELA             ; volta um periodo, preservando o excesso
+    mov ASCII_X, AX                  ; reaparece pela esquerda
+    jmp mover_visivel
+
+mover_some_dir:
+    mov ASCII_X, LARG_TELA           ; fica fora, a direita
+    jmp mover_fora
+
+mover_esquerda:
+    mov BP, CX
+    neg BP                           ; BP = -largura
+    cmp AX, BP
+    jg  mover_visivel                ; ainda aparece
+    cmp DI, MODO_SOME
+    je  mover_some_esq
+    add AX, PERIODO_TELA             ; avanca um periodo, preservando o excesso
+    mov ASCII_X, AX                  ; reaparece pela direita
+    jmp mover_visivel
+
+mover_some_esq:
+    mov ASCII_X, BP                  ; fica fora, a esquerda
+    jmp mover_fora
+
+mover_visivel:
+    call DESENHA_SPRITE_RECORTADO    ; desenha na nova posicao
+    clc                              ; CF = 0
+    jmp mover_fim
+
+mover_fora:
+    stc                              ; CF = 1: nada a desenhar
+
+mover_fim:
+    pop BP
+    pop DX
+    pop CX
+    pop BX
+    pop AX
+    ret
+MOVER_SPRITE endp
+
+;-------------------------------------------------------------------
+; ESPERA_RETRACO: espera o inicio do proximo retraco vertical
+;                 (sincroniza o laco com ~60 quadros por segundo)
+;-------------------------------------------------------------------
+ESPERA_RETRACO proc
+    push AX
+    push DX
+
+    mov DX, 3DAH                     ; porta de status do VGA
+
+retraco_sai:
+    in AL, DX
+    test AL, 08H                     ; bit 3 = retraco em andamento
+    jnz retraco_sai                  ; espera terminar o atual
+
+retraco_entra:
+    in AL, DX
+    test AL, 08H
+    jz  retraco_entra                ; espera o proximo comecar
+
+    pop DX
+    pop AX
+    ret
+ESPERA_RETRACO endp
+
+;-------------------------------------------------------------------
+; MOVER_SPRITES_MENU: move juntos os sprites do menu (3 naves e o
+;                     jipe, todos na mesma linha); ao sair pela
+;                     direita cada um reaparece pela esquerda.
+;                     Com AX = 0 apenas desenha (uso inicial)
+; Entrada: AX = deslocamento em pixels (com sinal)
+;          ES = 0A000H
+; Altera:  NAVES_MENU_X (posicoes atuais), ASCII_X, ASCII_Y, FUNDO_COR
+;-------------------------------------------------------------------
+MOVER_SPRITES_MENU proc
+    push AX
+    push BX
+    push CX
+    push DX
+    push SI
+    push DI
+
+    mov FUNDO_COR, COR_FUNDO         ; fundo do menu e preto
+    mov ASCII_Y, 100                 ; linha dos sprites do menu
+    mov DI, MODO_REAPARECE
+
+    ; nave 1
+    mov DX, SPRITES_MENU_X[0]
+    mov ASCII_X, DX
+    mov SI, offset NAVES_SPRITE
+    mov BX, offset NAVE_PALETA
+    mov CX, LARGURA_NAVE
+    mov DX, ALTURA_NAVE
+    call MOVER_SPRITE
+    mov DX, ASCII_X                  ; novo X devolvido por MOVER_SPRITE
+    mov SPRITES_MENU_X[0], DX
+
+    ; nave 2 (BX, CX e DI continuam os mesmos)
+    mov DX, SPRITES_MENU_X[2]
+    mov ASCII_X, DX
+    mov SI, offset NAVES_SPRITE + TAM_NAVE
+    mov DX, ALTURA_NAVE
+    call MOVER_SPRITE
+    mov DX, ASCII_X
+    mov SPRITES_MENU_X[2], DX
+
+    ; nave 3
+    mov DX, SPRITES_MENU_X[4]
+    mov ASCII_X, DX
+    mov SI, offset NAVES_SPRITE + 2 * TAM_NAVE
+    mov DX, ALTURA_NAVE
+    call MOVER_SPRITE
+    mov DX, ASCII_X
+    mov SPRITES_MENU_X[4], DX
+
+    ; jipe
+    mov DX, SPRITES_MENU_X[6]
+    mov ASCII_X, DX
+    mov SI, offset JIPE_SPRITE
+    mov BX, offset JIPE_PALETA
+    mov CX, LARGURA_JIPE
+    mov DX, ALTURA_JIPE
+    call MOVER_SPRITE
+    mov DX, ASCII_X
+    mov SPRITES_MENU_X[6], DX
+
+    pop DI
+    pop SI
+    pop DX
+    pop CX
+    pop BX
+    pop AX
+    ret
+MOVER_SPRITES_MENU endp
+
+; ---------------------------------------------------------------------
 ; DESENHAR_BOTOES: desenha os botoes do menu (Jogar e Sair) e le o
 ;   teclado: seta para cima e para baixo trocam a opcao selecionada
 ;   (destacada com COR_SELEC), Enter confirma e retorna
 ; Entrada: ES = 0A000H; OPCAO_SEL = opcao inicial selecionada
 ; Saida:   OPCAO_SEL = opcao escolhida (0 = Jogar, 1 = Sair)
-;          todos os registradores preservados
 ; ---------------------------------------------------------------------
 DESENHAR_BOTOES proc
     push AX
@@ -1472,17 +1816,29 @@ botoes_fim_conta:
     jmp botoes_proximo                       ; salto longo: jb direto sairia do alcance
 
 botoes_tecla:
+    call ESPERA_RETRACO              ; 1 quadro por retraco (~60 por segundo)
+    mov AX, 2                        ; deslocamento por quadro (direita)
+    call MOVER_SPRITES_MENU
+
+    mov AH, 01H
+    int 16H                          ; ZF = 1 se nao ha tecla (nao espera)
+    jz  botoes_tecla                 ; sem tecla: proximo quadro
     mov AH, 00H
-    int 16H                                  ; AH = scan code, AL = ASCII
+    int 16H                          ; consome a tecla: AH = scan code, AL = ASCII
 
-    cmp AH, 48H                              ; seta para cima
+    mov AH, 01H
+    int 16H                          ; ZF = 1 se nao ha tecla (nao espera)
+    jz  botoes_tecla                 ; sem tecla: proximo quadro
+    mov AH, 00H
+    int 16H                          ; consome a tecla: AH = scan code, AL = ASCII
+    
+    cmp AH, 48H                      ; seta para cima
     je  botoes_cima
-    cmp AH, 50H                              ; seta para baixo
+    cmp AH, 50H                      ; seta para baixo
     je  botoes_baixo
-    cmp AL, 13                               ; Enter
+    cmp AL, 13                       ; Enter
     je  botoes_enter
-    jmp botoes_tecla                         ; outra tecla: ignora
-
+    jmp botoes_tecla                 ; outra tecla: ignora
 botoes_cima:
     cmp OPCAO_SEL, 0                         ; ja na primeira opcao
     je  botoes_tecla
@@ -1506,66 +1862,35 @@ botoes_enter:
     ret
 DESENHAR_BOTOES endp
 
-; ---------------------------------------------------------------------
-; DESENHA_ASCII_PALETA: desenha um sprite colorido; o valor de cada
-;   pixel ? traduzido para uma cor por uma paleta (0 = transparente)
-; Entrada: SI = endere?o do sprite (uma linha ap?s a outra)
-;          BX = endere?o da paleta (tabela de cores indexada pelo
-;               valor do pixel)
-;          CX = largura do sprite (colunas)
-;          DX = altura do sprite (linhas)
-;          ASCII_X, ASCII_Y = canto superior esquerdo na tela
-;          ES = 0A000H; DF = 0 (CLD)
-; ---------------------------------------------------------------------
-DESENHA_ASCII_PALETA proc
-    push AX
-    push BX
-    push CX
-    push DX
-    push SI
-    push DI
-    push BP
-
-    mov BP, DX
-    mov AX, ASCII_Y
-    mov DX, LARG_TELA
-    mul DX
-    add AX, ASCII_X
-    mov DI, AX
-    mov DX, CX
-
-paleta_linha:
-    mov CX, DX
-
-paleta_pixel:
-    lodsb
-    sub AL, '0'
-    cmp AL, 0
-    je  paleta_vazio
-    xlat
-    stosb
-    jmp paleta_proximo
-
-paleta_vazio:
-    inc DI
-
-paleta_proximo:
-    loop paleta_pixel
-
-    add DI, LARG_TELA
-    sub DI, DX
-    dec BP
-    jnz paleta_linha
-
-    pop BP
-    pop DI
-    pop SI
-    pop DX
-    pop CX
-    pop BX
-    pop AX
+;-------------------------------------------------------------------
+; GAME_OVER: limpa a tela, desenha o titulo de fim de jogo e espera
+;            uma tecla
+; Altera:  AX, CX, DX, SI, DI, ASCII_X e ASCII_Y
+;-------------------------------------------------------------------
+GAME_OVER proc
+    call LIMPAR_TELA
+    
+    mov DI, offset COR_GAMEOVER            
+    mov ASCII_X, X_INICIAL_TITULO              ; posi??o inicial do t?tulo
+    add ASCII_X, 65                            ; offset extra pelas 2 linhas            
+    mov ASCII_Y, Y_INICIAL_TITULO
+    mov CX, LARGURA_GAMEOVER                   ; avan?o em X
+    mov DX, ALTURA_GAMEOVER                    ; avan?o em Y
+    mov SI, offset TITULO_GAMEOVER
+    call ESCREVER_TEXTO
+    
+    mov ASCII_X, 50
+    mov ASCII_Y, 150
+    mov CX, LARGURA
+    mov DX, ALTURA
+    mov SI, offset TXT_GAMEOVER
+    call ESCREVER_TEXTO
+    
+    mov AH, 00H
+    int 16H                                  ; espera uma tecla
+    
     ret
-DESENHA_ASCII_PALETA endp
+GAME_OVER endp
 
 ; ---------------------------------------------------------------------
 ; MENU_INICIAL: desenha o t?tulo do jogo e o menu, e espera o
@@ -1586,35 +1911,12 @@ MENU_INICIAL proc
     mov DX, ALTURA_TITULO                    ; avan?o em Y
     mov SI, offset TITULO_JOGO
     call ESCREVER_TEXTO
-
-    mov ASCII_X, 110                         ; X do canto superior esquerdo
-    mov ASCII_Y, 100                         ; Y do canto superior esquerdo
-    mov SI, offset JIPE_SPRITE
-    mov BX, offset JIPE_PALETA
-    mov CX, LARGURA_JIPE
-    mov DX, ALTURA_JIPE
-    call DESENHA_ASCII_PALETA
-
-    ; nave 1
-    mov ASCII_X, 140
-    mov SI, offset NAVES_SPRITE
-    mov BX, offset NAVE_PALETA
-    mov CX, LARGURA_NAVE
-    mov DX, ALTURA_NAVE
-    call DESENHA_ASCII_PALETA
-
-    ; nave 2 (BX, CX e DX continuam os mesmos)
-    mov ASCII_X, 170
-    mov SI, offset NAVES_SPRITE + TAM_NAVE
-    call DESENHA_ASCII_PALETA
-
-    ; nave 3
-    mov ASCII_X, 200
-    mov SI, offset NAVES_SPRITE + 2 * TAM_NAVE
-    call DESENHA_ASCII_PALETA
+    
+    xor AX, AX                       ; deslocamento 0: so desenha nos X atuais
+    call MOVER_SPRITES_MENU
 
     call DESENHAR_BOTOES
-
+    
     pop SI
     pop DX
     pop CX
@@ -1627,7 +1929,8 @@ MENU_INICIAL endp
 ; ---------------------------------------------------------------------
 INICIA_JOGO proc
     call LIMPAR_TELA
-
+    
+    mov JIPE_X, 10
     mov ASCII_X, 5
     mov ASCII_Y, 5
     mov SI, CORACOES[4]
@@ -1686,10 +1989,70 @@ INICIA_JOGO proc
     mov DX, ALTURA_JIPE
     call DESENHA_ASCII_PALETA
     
+jogo_loop:
+    call ESPERA_RETRACO
+
+    mov AX, NAVE_X
+    mov ASCII_X, AX
+    mov ASCII_Y, NAVE_Y
+    mov SI, offset NAVES_SPRITE
+    mov BX, offset NAVE_PALETA
+    mov CX, LARGURA_NAVE
+    mov DX, ALTURA_NAVE
+    mov DI, MODO_REAPARECE           ; <- modo escolhido aqui
+    mov FUNDO_COR, COR_FUNDO
+    mov AX, NAVE_VEL
+    call MOVER_SPRITE
+    mov AX, ASCII_X
+    mov NAVE_X, AX
+
+    ; teclado (nao espera)
+    mov AH, 01H
+    int 16H                          ; ZF = 1 se nao ha tecla
+    jz  jogo_volta
     mov AH, 00H
-    int 16H                                  ; espera uma tecla
-    
+    int 16H                          ; AH = scan code, AL = ASCII
+    cmp AL, 1BH                      ; Esc encerra
+    je  jogo_fim
+    cmp AH, 4BH                      ; seta esquerda
+    je  jipe_esq
+    cmp AH, 4DH                      ; seta direita
+    jne jogo_volta
+    mov AX, 4
+    jmp jipe_move
+jipe_esq:
+    mov AX, -4
+
+jipe_move:
+    mov DX, JIPE_X
+    add DX, AX                       ; novo X
+    cmp DX, 0
+    jl  jogo_volta                   ; sairia pela esquerda: ignora
+    cmp DX, LARG_TELA - LARGURA_JIPE
+    jg  jogo_volta                   ; sairia pela direita: ignora
+
+    push AX                          ; guarda o deslocamento
+    mov AX, JIPE_X
+    mov ASCII_X, AX
+    mov ASCII_Y, JIPE_Y
+    mov SI, offset JIPE_SPRITE
+    mov BX, offset JIPE_PALETA
+    mov CX, LARGURA_JIPE
+    mov DX, ALTURA_JIPE
+    mov AL, [TERRENO_PERTO_PALETA + 1]
+    mov FUNDO_COR, AL                ; fundo do jipe = cor do terreno perto
+    pop AX
+    mov DI, MODO_REAPARECE
+    call MOVER_SPRITE
+    mov AX, ASCII_X
+    mov JIPE_X, AX
+
+jogo_volta:
+    jmp jogo_loop                    ; salto longo: jz/jl direto sairiam do alcance
+
+jogo_fim:
     ret
+    
 INICIA_JOGO endp
 
 ; =====================================================================
@@ -1704,11 +2067,12 @@ start:
 
     call MODO_VIDEO
 menu:
-    ;call LIMPAR_TELA
+    call LIMPAR_TELA
     call MENU_INICIAL                        ; t?tulo + menu: define OPCAO_SEL
     cmp OPCAO_SEL, 0
     jne fim_programa                         ; 1 = Sair
     call INICIA_JOGO                         ; 0 = Jogar
+    call GAME_OVER
     jmp menu
 
 fim_programa:
