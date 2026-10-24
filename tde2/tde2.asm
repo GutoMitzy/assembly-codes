@@ -1131,21 +1131,21 @@ FONTE_GLYPHS label byte
     db 0CH, 12H, 12H, 0EH, 02H, 02H, 0CH, 00H   ; 41 9
 
 .code
-; ---------------------------------------------------------------------
-; MODO_VIDEO: configura o modo gr?fico 13H (320x200, 256 cores)
-; ---------------------------------------------------------------------
+
+;-------------------------------------------------------------------
+; MODO_VIDEO: configura o modo grafico 13H.
+;-------------------------------------------------------------------
 MODO_VIDEO proc
     mov AX, 0013H                            ; modo 13H: 320x200, 256 cores
     int 10H
     ret
 MODO_VIDEO endp
 
-; ---------------------------------------------------------------------
-; ASCII_PARA_INDICE: converte um caractere ASCII no ?ndice do glifo
-;   (min?scula vira mai?scula; desconhecido vira espa?o)
+;-------------------------------------------------------------------
+; ASCII_PARA_INDICE: converte ASCII no indice do glifo.
 ; Entrada: AL = caractere ASCII
-; Sa?da:   AL = ?ndice do glifo (BX e CX preservados)
-; ---------------------------------------------------------------------
+; Saida:   AL = indice do glifo (desconhecido = G_ESPACO)
+;-------------------------------------------------------------------
 ASCII_PARA_INDICE proc
     push BX
     push CX
@@ -1179,6 +1179,13 @@ fim_conversao:
     ret
 ASCII_PARA_INDICE endp
 
+;-------------------------------------------------------------------
+; CONTAGEM_TEMPO: atualiza a contagem com base nos ticks do BIOS.
+; Entrada: TEMPO_DECORRIDO = referencia do ultimo intervalo
+;          TEMPO_INICIAL = segundos restantes
+; Saida:   AL = 1 se decrementou o tempo; 0 caso contrario
+;          TEMPO_TEXTO = dois digitos atualizados se decrementou
+;-------------------------------------------------------------------
 CONTAGEM_TEMPO proc
     push BX
     push DX
@@ -1191,17 +1198,17 @@ CONTAGEM_TEMPO proc
     mov BX, DX
     sub BX, TEMPO_DECORRIDO
 
-    cmp BX, 18
+    cmp BX, 18                               ; Aguarda o intervalo de ticks usado como um segundo.
     jb contagem_fim
 
-    add TEMPO_DECORRIDO, 18
+    add TEMPO_DECORRIDO, 18                  ; Avanca a referencia de ticks sem descartar o excedente.
 
     dec TEMPO_INICIAL
 
     mov AX, TEMPO_INICIAL
     xor DX, DX
     mov BX, 10
-    div BX
+    div BX                                   ; Separa dezenas e unidades para exibir dois digitos.
 
     add AL, '0'
     mov TEMPO_TEXTO[0], AL
@@ -1214,18 +1221,18 @@ CONTAGEM_TEMPO proc
     cmp TEMPO_INICIAL, 0
     jne contagem_fim
 
+    ; Retorna com AL indicando se o tempo mudou neste ciclo.
 contagem_fim:
     pop DX
     pop BX
     ret
 CONTAGEM_TEMPO endp
 
-; ---------------------------------------------------------------------
-; ATUALIZA_TEMPO: limpa e redesenha o tempo na HUD
-; Entrada: TEMPO_TEXTO = tempo atual convertido para ASCII
-;          ES = 0A000H; DF = 0 (CLD)
-; Sa?da: tempo atual desenhado na tela
-; ---------------------------------------------------------------------
+;-------------------------------------------------------------------
+; ATUALIZA_TEMPO: apaga e redesenha o tempo na tela.
+; Entrada: TEMPO_TEXTO = dois caracteres numericos terminados em 0
+; Saida:   ASCII_X, ASCII_Y = posicao final do texto
+;-------------------------------------------------------------------
 ATUALIZA_TEMPO proc
     push AX
     push CX
@@ -1257,13 +1264,12 @@ ATUALIZA_TEMPO proc
     ret
 ATUALIZA_TEMPO endp
 
-; ---------------------------------------------------------------------
-; TRATA_TECLADO: atualiza o estado das setas durante a interrupcao
-;                 do teclado
-; Entrada: AL = scan code recebido da porta 60H
-; Saida: TECLA_ESQ = 1 enquanto seta esquerda estiver pressionada
-;        TECLA_DIR = 1 enquanto seta direita estiver pressionada
-; ---------------------------------------------------------------------
+;-------------------------------------------------------------------
+; TRATA_TECLADO: registra pressionamento e soltura das setas.
+; Entrada: codigo de varredura lido da porta 60H
+;          OLD_INT09_OFF, OLD_INT09_SEG = vetor anterior
+; Saida:   TECLA_ESQ, TECLA_DIR = estado das setas
+;-------------------------------------------------------------------
 TRATA_TECLADO proc far
     push AX
     push DS
@@ -1271,7 +1277,7 @@ TRATA_TECLADO proc far
     mov AX, @data
     mov DS, AX
 
-    in AL, 60H
+    in AL, 60H                               ; Le o scan code disponibilizado pelo controlador.
 
     cmp AL, 4BH
     je tecla_esq_press
@@ -1306,18 +1312,18 @@ teclado_fim:
     pop DS
     pop AX
 
-    push OLD_INT09_SEG
+    push OLD_INT09_SEG                       ; Empilha segmento e offset para transferir ao handler anterior.
     push OLD_INT09_OFF
     retf
 
 TRATA_TECLADO endp
 
-; ---------------------------------------------------------------------
-; DESENHA_CARACTERE: desenha um glifo da fonte bitmap na VRAM
-; Entrada: AL = ?ndice do glifo na tabela
-;          ASCII_X, ASCII_Y = posi??o do canto superior esquerdo
-;          COR_ATUAL = cor; ES = 0A000H
-; ---------------------------------------------------------------------
+;-------------------------------------------------------------------
+; DESENHA_CARACTERE: desenha um glifo usando a fonte bitmap.
+; Entrada: AL = indice do glifo
+;          DI = endereco da paleta (cor em [DI + 1])
+;          ASCII_X, ASCII_Y = posicao inicial do glifo
+;-------------------------------------------------------------------
 DESENHA_CARACTERE proc
     push AX
     push BX
@@ -1374,30 +1380,28 @@ proximo_bit:
 DESENHA_CARACTERE endp
 
 ;-------------------------------------------------------------------
-; LIMPAR_TELA: preenche toda a VRAM com a cor 0 (preto), apagando
-;              a tela do modo 13H
-; Altera:  AX, CX, DI e ES (ES = 0A000H ao retornar)
+; LIMPAR_TELA: limpa toda a tela com a cor zero.
+; Saida:   AX = 0; CX = 0; DI = 64000; ES = 0A000H
 ;-------------------------------------------------------------------
 LIMPAR_TELA proc
     mov AX, 0A000h      ; Segmento da mem?ria de v?deo
     mov ES, AX
-    xor DI, DI         
-    
-    xor AX, AX          
+    xor DI, DI
+
+    xor AX, AX
     mov cx, 32000       ; 32000 words * 2 bytes = 64000 bytes (tamanho da tela)
-    
-    cld                 
-    rep stosw           
+
+    cld
+    rep stosw
     ret
 LIMPAR_TELA endp
 
 ;-------------------------------------------------------------------
-; PREENCHER_LINHAS: preenche um retangulo com uma unica cor
-; Entrada: AL = cor (valor do byte, nao o indice da paleta)
+; PREENCHER_LINHAS: preenche um retangulo com uma unica cor.
+; Entrada: AL = cor (byte, nao indice da paleta)
 ;          CX = largura em pixels
-;          DX = quantidade de linhas (minimo 1; 0 nao desenha nada)
+;          DX = quantidade de linhas (0 nao desenha)
 ;          ASCII_X, ASCII_Y = canto superior esquerdo
-;          ES = 0A000H; DF = 0 (CLD)
 ;-------------------------------------------------------------------
 PREENCHER_LINHAS proc
     push AX
@@ -1438,17 +1442,15 @@ preencher_fim:
     ret
 PREENCHER_LINHAS endp
 
-; ---------------------------------------------------------------------
-; ESCREVER_TEXTO: desenha um texto de uma ou varias linhas pixel a
-;   pixel (CR ignorado, LF volta ao X inicial e desce uma linha,
-;   0 encerra)
-; Entrada: DS:SI = endereco da string terminada em 0
+;-------------------------------------------------------------------
+; ESCREVER_TEXTO: desenha texto com a fonte bitmap.
+; Entrada: SI = endereco do texto terminado em 0
+;          DI = endereco da paleta de cor
+;          CX = avanco horizontal por caractere
+;          DX = avanco vertical por quebra de linha
 ;          ASCII_X, ASCII_Y = posicao inicial
-;          DI = endereco da paleta de cor; ES = 0A000H
-;          CX = avanco em X por caractere
-;          DX = avanco em Y por linha
-; Saida:   ASCII_X, ASCII_Y alterados; AX, BX e SI preservados
-; ---------------------------------------------------------------------
+; Saida:   ASCII_X, ASCII_Y = posicao apos o texto
+;-------------------------------------------------------------------
 ESCREVER_TEXTO proc
     push AX
     push BX
@@ -1482,15 +1484,13 @@ texto_fim:
     ret
 ESCREVER_TEXTO endp
 
-; ---------------------------------------------------------------------
-; DESENHAR_CAIXA: desenha a moldura de 3 linhas de celulas de um
-;   botao (cantos, linhas horizontais e verticais), sem o texto
-; Entrada: ASCII_X, ASCII_Y = canto superior esquerdo
-;          CX = quantidade de celulas do meio (letras + 2)
-;          DI = endereco da paleta de cor; ES = 0A000H
-; Saida:   ASCII_X, ASCII_Y preservados; todos os registradores
-;          preservados
-; ---------------------------------------------------------------------
+;-------------------------------------------------------------------
+; DESENHAR_CAIXA: desenha a moldura de um botao.
+; Entrada: CX = numero de celulas entre os cantos
+;          DI = endereco da paleta de cor
+;          ASCII_X, ASCII_Y = canto superior esquerdo
+; Saida:   ASCII_X, ASCII_Y preservados
+;-------------------------------------------------------------------
 DESENHAR_CAIXA proc
     push AX
     push BX
@@ -1537,17 +1537,14 @@ caixa_meio:
     ret
 DESENHAR_CAIXA endp
 
-; ---------------------------------------------------------------------
-; DESENHA_ASCII_PALETA: desenha um sprite colorido; o valor de cada
-;   pixel ? traduzido para uma cor por uma paleta (0 = transparente)
-; Entrada: SI = endere?o do sprite (uma linha ap?s a outra)
-;          BX = endere?o da paleta (tabela de cores indexada pelo
-;               valor do pixel)
-;          CX = largura do sprite (colunas)
-;          DX = altura do sprite (linhas)
-;          ASCII_X, ASCII_Y = canto superior esquerdo na tela
-;          ES = 0A000H; DF = 0 (CLD)
-; ---------------------------------------------------------------------
+;-------------------------------------------------------------------
+; DESENHA_ASCII_PALETA: desenha sprite com cores indexadas por paleta.
+; Entrada: SI = endereco do sprite
+;          BX = endereco da paleta
+;          CX = largura do sprite em pixels
+;          DX = altura do sprite em linhas
+;          ASCII_X, ASCII_Y = canto superior esquerdo
+;-------------------------------------------------------------------
 DESENHA_ASCII_PALETA proc
     push AX
     push BX
@@ -1557,7 +1554,7 @@ DESENHA_ASCII_PALETA proc
     push DI
     push BP
 
-    mov BP, DX
+    mov BP, DX                               ; Mantem a altura porque a multiplicacao altera DX.
     mov AX, ASCII_Y
     mov DX, LARG_TELA
     mul DX
@@ -1565,9 +1562,11 @@ DESENHA_ASCII_PALETA proc
     mov DI, AX
     mov DX, CX
 
+    ; Reinicia a largura para a proxima linha do bitmap.
 paleta_linha:
     mov CX, DX
 
+    ; Cada caractere representa um indice na paleta.
 paleta_pixel:
     lodsb
     sub AL, '0'
@@ -1577,6 +1576,7 @@ paleta_pixel:
     stosb
     jmp paleta_proximo
 
+    ; Indice zero nao sobrescreve o fundo.
 paleta_vazio:
     inc DI
 
@@ -1599,11 +1599,11 @@ paleta_proximo:
 DESENHA_ASCII_PALETA endp
 
 ;-------------------------------------------------------------------
-; RECORTA_X: recorta um trecho horizontal ao que cabe na tela
-; Entrada: AX = X da primeira coluna (com sinal; pode ser negativo)
-;          CX = largura em pixels
-; Saida:   AX = X da primeira coluna visivel
-;          CX = colunas visiveis (0 se nada aparece)
+; RECORTA_X: limita um trecho horizontal a largura da tela.
+; Entrada: AX = coordenada X inicial (com sinal)
+;          CX = largura original
+; Saida:   AX = primeira coordenada X visivel
+;          CX = largura visivel (0 se fora da tela)
 ;-------------------------------------------------------------------
 RECORTA_X proc
     push BX
@@ -1635,12 +1635,11 @@ recorta_fim:
 RECORTA_X endp
 
 ;-------------------------------------------------------------------
-; APAGAR_SPRITE: cobre com uma cor o retangulo de um sprite,
-;                recortado nas bordas da tela
-; Entrada: AL = cor de fundo
-;          CX = largura do sprite, DX = altura do sprite
-;          ASCII_X (com sinal), ASCII_Y = canto superior esquerdo
-;          ES = 0A000H
+; APAGAR_SPRITE: apaga a area visivel de um sprite.
+; Entrada: AL = cor usada para apagar
+;          CX = largura do sprite
+;          DX = altura do sprite
+;          ASCII_X, ASCII_Y = posicao original do sprite
 ;-------------------------------------------------------------------
 APAGAR_SPRITE proc
     push AX
@@ -1667,14 +1666,12 @@ apagar_fim:
 APAGAR_SPRITE endp
 
 ;-------------------------------------------------------------------
-; DESENHA_SPRITE_RECORTADO: desenha um sprite de digitos com paleta,
-;                           so nas colunas que cabem na tela (usa
-;                           DESENHA_ASCII_PALETA, uma linha por vez)
+; DESENHA_SPRITE_RECORTADO: desenha apenas a parte visivel do sprite.
 ; Entrada: SI = endereco do sprite
 ;          BX = endereco da paleta
-;          CX = largura do sprite, DX = altura do sprite
-;          ASCII_X (com sinal), ASCII_Y = canto superior esquerdo
-;          ES = 0A000H
+;          CX = largura original do sprite
+;          DX = altura do sprite
+;          ASCII_X, ASCII_Y = posicao original (X com sinal)
 ;-------------------------------------------------------------------
 DESENHA_SPRITE_RECORTADO proc
     push AX
@@ -1699,6 +1696,7 @@ DESENHA_SPRITE_RECORTADO proc
     mov ASCII_X, AX                  ; desenha a partir da 1a coluna visivel
     mov DX, 1                        ; uma linha por chamada
 
+    ; A rotina de paleta recebe uma linha por chamada.
 recortado_linha:
     call DESENHA_ASCII_PALETA
     add SI, DI                       ; proxima linha do sprite
@@ -1720,20 +1718,15 @@ recortado_fim:
 DESENHA_SPRITE_RECORTADO endp
 
 ;-------------------------------------------------------------------
-; MOVER_SPRITE: move um sprite na horizontal: apaga na posicao atual
-;               com FUNDO_COR, soma o deslocamento ao X e desenha
-;               na nova posicao (recortado nas bordas). Quando o
-;               sprite sai por inteiro da tela, o modo decide: reaparece
-;               pelo lado oposto ou fica fora e nao volta
-; Entrada: AX = deslocamento em pixels (com sinal)
-;          DI = modo (MODO_REAPARECE ou MODO_SOME)
-;          SI = sprite, BX = paleta
-;          CX = largura, DX = altura
-;          ASCII_X = X atual (com sinal), ASCII_Y
-;          FUNDO_COR = cor de fundo; ES = 0A000H
-; Saida:   ASCII_X = novo X
-;          CF = 0: sprite ainda aparece (ou reapareceu)
-;          CF = 1: sprite saiu da tela (so no MODO_SOME)
+; MOVER_SPRITE: apaga, desloca e redesenha um sprite.
+; Entrada: AX = deslocamento horizontal (com sinal)
+;          DI = MODO_REAPARECE ou MODO_SOME
+;          SI = endereco do sprite; BX = endereco da paleta
+;          CX = largura; DX = altura
+;          ASCII_X, ASCII_Y = posicao atual
+;          FUNDO_COR = cor usada para apagar
+; Saida:   ASCII_X = nova posicao horizontal
+;          CF = 0 se visivel; 1 se saiu no MODO_SOME
 ;-------------------------------------------------------------------
 MOVER_SPRITE proc
     push AX
@@ -1755,9 +1748,9 @@ MOVER_SPRITE proc
 
     cmp AX, LARG_TELA                ; indo para a direita
     jl  mover_visivel                ; ainda aparece
-    cmp DI, MODO_SOME
+    cmp DI, MODO_SOME                        ; Decide entre desaparecer e reaparecer no lado oposto.
     je  mover_some_dir
-    
+
     sub AX, PERIODO_TELA             ; volta um periodo, preservando o excesso
     mov ASCII_X, AX                  ; reaparece pela esquerda
     jmp mover_visivel
@@ -1766,6 +1759,7 @@ mover_some_dir:
     mov ASCII_X, LARG_TELA           ; fica fora, a direita
     jmp mover_fora
 
+    ; Testa a borda esquerda usando a largura negativa do sprite.
 mover_esquerda:
     mov BP, CX
     neg BP                           ; BP = -largura
@@ -1781,6 +1775,7 @@ mover_some_esq:
     mov ASCII_X, BP                  ; fica fora, a esquerda
     jmp mover_fora
 
+    ; Redesenha o sprite na posicao calculada.
 mover_visivel:
     call DESENHA_SPRITE_RECORTADO    ; desenha na nova posicao
     clc                              ; CF = 0
@@ -1799,8 +1794,7 @@ mover_fim:
 MOVER_SPRITE endp
 
 ;-------------------------------------------------------------------
-; ESPERA_RETRACO: espera o inicio do proximo retraco vertical
-;                 (sincroniza o laco com ~60 quadros por segundo)
+; ESPERA_RETRACO: aguarda o proximo retraco vertical.
 ;-------------------------------------------------------------------
 ESPERA_RETRACO proc
     push AX
@@ -1824,13 +1818,11 @@ retraco_entra:
 ESPERA_RETRACO endp
 
 ;-------------------------------------------------------------------
-; MOVER_SPRITES_MENU: move juntos os sprites do menu (3 naves e o
-;                     jipe, todos na mesma linha); ao sair pela
-;                     direita cada um reaparece pela esquerda.
-;                     Com AX = 0 apenas desenha (uso inicial)
-; Entrada: AX = deslocamento em pixels (com sinal)
-;          ES = 0A000H
-; Altera:  NAVES_MENU_X (posicoes atuais), ASCII_X, ASCII_Y, FUNDO_COR
+; MOVER_SPRITES_MENU: desloca as tres naves e o jipe do menu.
+; Entrada: AX = deslocamento horizontal comum
+;          SPRITES_MENU_X = posicoes atuais dos quatro sprites
+; Saida:   SPRITES_MENU_X = posicoes atualizadas
+;          ASCII_X, ASCII_Y e FUNDO_COR alterados
 ;-------------------------------------------------------------------
 MOVER_SPRITES_MENU proc
     push AX
@@ -1844,18 +1836,16 @@ MOVER_SPRITES_MENU proc
     mov ASCII_Y, 100                 ; linha dos sprites do menu
     mov DI, MODO_REAPARECE
 
-    ; nave 1
     mov DX, SPRITES_MENU_X[0]
     mov ASCII_X, DX
     mov SI, offset NAVES_SPRITE
     mov BX, offset NAVE_PALETA
     mov CX, LARGURA_NAVE
     mov DX, ALTURA_NAVE
-    call MOVER_SPRITE
+    call MOVER_SPRITE                        ; Apaga, desloca e redesenha usando a mesma rotina.
     mov DX, ASCII_X                  ; novo X devolvido por MOVER_SPRITE
     mov SPRITES_MENU_X[0], DX
 
-    ; nave 2 (BX, CX e DI continuam os mesmos)
     mov DX, SPRITES_MENU_X[2]
     mov ASCII_X, DX
     mov SI, offset NAVES_SPRITE + TAM_NAVE
@@ -1864,7 +1854,6 @@ MOVER_SPRITES_MENU proc
     mov DX, ASCII_X
     mov SPRITES_MENU_X[2], DX
 
-    ; nave 3
     mov DX, SPRITES_MENU_X[4]
     mov ASCII_X, DX
     mov SI, offset NAVES_SPRITE + 2 * TAM_NAVE
@@ -1873,7 +1862,6 @@ MOVER_SPRITES_MENU proc
     mov DX, ASCII_X
     mov SPRITES_MENU_X[4], DX
 
-    ; jipe
     mov DX, SPRITES_MENU_X[6]
     mov ASCII_X, DX
     mov SI, offset JIPE_SPRITE
@@ -1893,13 +1881,12 @@ MOVER_SPRITES_MENU proc
     ret
 MOVER_SPRITES_MENU endp
 
-; ---------------------------------------------------------------------
-; DESENHAR_BOTOES: desenha os botoes do menu (Jogar e Sair) e le o
-;   teclado: seta para cima e para baixo trocam a opcao selecionada
-;   (destacada com COR_SELEC), Enter confirma e retorna
-; Entrada: ES = 0A000H; OPCAO_SEL = opcao inicial selecionada
-; Saida:   OPCAO_SEL = opcao escolhida (0 = Jogar, 1 = Sair)
-; ---------------------------------------------------------------------
+;-------------------------------------------------------------------
+; DESENHAR_BOTOES: desenha e controla a selecao do menu.
+; Entrada: OPCAO_SEL = indice inicialmente selecionado
+;          BOTOES_TXT, BOTOES_Y = textos e posicoes dos botoes
+; Saida:   OPCAO_SEL = indice confirmado com Enter
+;-------------------------------------------------------------------
 DESENHAR_BOTOES proc
     push AX
     push BX
@@ -1909,6 +1896,7 @@ DESENHAR_BOTOES proc
     push DI
     push BP
 
+    ; Recomeca o desenho para atualizar o destaque da opcao.
 botoes_redesenha:
     xor BP, BP                               ; BP = indice da opcao
 
@@ -1930,6 +1918,7 @@ botoes_cor:
     xor CX, CX                               ; CX = quantidade de letras
     mov BX, SI
 
+    ; Conta os caracteres para centralizar a moldura.
 botoes_conta:
     cmp byte ptr [BX], 0
     je  botoes_fim_conta
@@ -1971,6 +1960,7 @@ botoes_fim_conta:
     jae botoes_tecla                         ; todos desenhados: le o teclado
     jmp botoes_proximo                       ; salto longo: jb direto sairia do alcance
 
+    ; Atualiza a animacao enquanto aguarda entrada do teclado.
 botoes_tecla:
     call ESPERA_RETRACO              ; 1 quadro por retraco (~60 por segundo)
     mov AX, 2                        ; deslocamento por quadro (direita)
@@ -2014,29 +2004,31 @@ botoes_enter:
 DESENHAR_BOTOES endp
 
 ;-------------------------------------------------------------------
-; GAME_OVER: limpa a tela, desenha o titulo de fim de jogo, o score
-;            (SCORE_INICIAL) e espera uma tecla
-; Altera:  AX, CX, DX, SI, DI, ASCII_X e ASCII_Y
+; GAME_OVER: mostra a tela de fim de jogo e aguarda uma tecla.
+; Entrada: TITULO_GAMEOVER = desenho do titulo
+;          TXT_GAMEOVER = instrucao de continuidade
+;          TXT_SCORE, SCORE_INICIAL = pontuacao exibida
+; Saida:   ASCII_X, ASCII_Y e registradores de desenho alterados
 ;-------------------------------------------------------------------
 GAME_OVER proc
     call LIMPAR_TELA
-    
-    mov DI, offset COR_GAMEOVER            
+
+    mov DI, offset COR_GAMEOVER
     mov ASCII_X, X_INICIAL_TITULO              ; posi??o inicial do t?tulo
-    add ASCII_X, 70                            ; offset extra pelas 2 linhas            
+    add ASCII_X, 70                            ; offset extra pelas 2 linhas
     mov ASCII_Y, Y_INICIAL_TITULO
     mov CX, LARGURA_GAMEOVER                   ; avan?o em X
     mov DX, ALTURA_GAMEOVER                    ; avan?o em Y
     mov SI, offset TITULO_GAMEOVER
     call ESCREVER_TEXTO
-    
+
     mov ASCII_X, 50
     mov ASCII_Y, 170
     mov CX, LARGURA
     mov DX, ALTURA
     mov SI, offset TXT_GAMEOVER
     call ESCREVER_TEXTO
-    
+
     mov DI, offset COR_SCORE
     mov ASCII_X, 135                           ; (320 - 10 * 5) / 2: centraliza "SCORE 0000"
     mov ASCII_Y, 120                           ; logo acima do texto de continuar (Y = 150)
@@ -2046,18 +2038,17 @@ GAME_OVER proc
     call ESCREVER_TEXTO                        ; "SCORE " (ASCII_X fica no fim do texto)
     mov SI, offset SCORE_INICIAL
     call ESCREVER_TEXTO                        ; valor logo em seguida
-    
+
     mov AH, 00H
     int 16H                                  ; espera uma tecla
-    
+
     ret
 GAME_OVER endp
 
 ;-------------------------------------------------------------------
-; DESENHA_CORACOES: desenha o sprite com a quantidade de coracoes
-;                   indicada por VIDAS (1 a 3)
-; Entrada: VIDAS; ES = 0A000H
-; Altera:  ASCII_X e ASCII_Y
+; DESENHA_CORACOES: desenha a quantidade atual de vidas.
+; Entrada: VIDAS = quantidade de coracoes (1 a 3)
+; Saida:   ASCII_X, ASCII_Y = posicao do desenho
 ;-------------------------------------------------------------------
 DESENHA_CORACOES proc
     push BX
@@ -2085,13 +2076,11 @@ DESENHA_CORACOES proc
 DESENHA_CORACOES endp
 
 ;-------------------------------------------------------------------
-; DEC_CORACAO: remove um coracao: apaga a area dos coracoes com
-;              PREENCHER_LINHAS e redesenha com um a menos
-; Entrada: VIDAS; ES = 0A000H
-; Saida:   CF = 0: coracao removido, ainda ha vidas
-;          CF = 1: era o ultimo coracao (nada e alterado); o
-;                  chamador deve encerrar a partida
-; Altera:  ASCII_X e ASCII_Y
+; DEC_CORACAO: remove uma vida e atualiza os coracoes.
+; Entrada: VIDAS = quantidade atual de vidas
+; Saida:   CF = 0 se removeu uma vida
+;          CF = 1 se restava apenas uma vida
+;          VIDAS decrementado apenas se CF = 0
 ;-------------------------------------------------------------------
 DEC_CORACAO proc
     cmp VIDAS, 1
@@ -2120,31 +2109,30 @@ dec_remove:
     ret
 DEC_CORACAO endp
 
-; ---------------------------------------------------------------------
-; MENU_INICIAL: desenha o t?tulo do jogo e o menu, e espera o
-;   usu?rio escolher uma op??o
-; Entrada: ES = 0A000H
-; Sa?da:   OPCAO_SEL = op??o escolhida (0 = Jogar, 1 = Sair)
-; ---------------------------------------------------------------------
+;-------------------------------------------------------------------
+; MENU_INICIAL: desenha o menu e aguarda a escolha.
+; Entrada: OPCAO_SEL = opcao inicialmente selecionada
+; Saida:   OPCAO_SEL = 0 para Jogar; 1 para Sair
+;-------------------------------------------------------------------
 MENU_INICIAL proc
     push AX
     push CX
     push DX
     push SI
 
-    mov DI, offset COR_TITULO            
+    mov DI, offset COR_TITULO
     mov ASCII_X, X_INICIAL_TITULO            ; posi??o inicial do t?tulo
     mov ASCII_Y, Y_INICIAL_TITULO
     mov CX, LARGURA_TITULO                   ; avan?o em X
     mov DX, ALTURA_TITULO                    ; avan?o em Y
     mov SI, offset TITULO_JOGO
     call ESCREVER_TEXTO
-    
+
     xor AX, AX                       ; deslocamento 0: so desenha nos X atuais
     call MOVER_SPRITES_MENU
 
     call DESENHAR_BOTOES
-    
+
     pop SI
     pop DX
     pop CX
@@ -2152,10 +2140,16 @@ MENU_INICIAL proc
     ret
 MENU_INICIAL endp
 
+;-------------------------------------------------------------------
+; EXIBE_STATUS: desenha vidas, pontuacao e relogio.
+; Entrada: VIDAS = quantidade de vidas
+;          SCORE_INICIAL = texto da pontuacao
+;          TEMPO_TEXTO = texto do tempo restante
+; Saida:   ASCII_X, ASCII_Y alterados
+;-------------------------------------------------------------------
 EXIBE_STATUS proc
     call DESENHA_CORACOES
-    
-    ; score 0000
+
     mov ASCII_X, (LARG_TELA - 4 * (LARGURA + 1)) / 2
     mov SI, offset SCORE_INICIAL
     mov DI, offset COR_SCORE
@@ -2171,7 +2165,6 @@ EXIBE_STATUS proc
     mov DX, ALTURA_RELOGIO
     call DESENHA_ASCII_PALETA
 
-    ; tempo restante
     add ASCII_X, 10
     add ASCII_Y, 1
     mov SI, offset TEMPO_TEXTO
@@ -2183,16 +2176,21 @@ EXIBE_STATUS proc
     ret
 EXIBE_STATUS endp
 
-; ---------------------------------------------------------------------
-; INICIA_JOGO: inicializa os elementos do jogo
-; ---------------------------------------------------------------------
+;-------------------------------------------------------------------
+; INICIA_JOGO: inicializa a partida e executa o loop principal.
+; Entrada: sprites, paletas e configuracoes da partida
+;          TECLA_ESQ, TECLA_DIR = estados das setas
+; Saida:   JIPE_X, JIPE_VEL e VIDAS atualizados
+;          TEMPO_INICIAL, TEMPO_DECORRIDO = controle de tempo
+;          Retorna quando Esc e pressionado ou o tempo acaba
+;-------------------------------------------------------------------
 INICIA_JOGO proc
     call LIMPAR_TELA
     mov JIPE_X, 10
     mov VIDAS, 3
 
     call EXIBE_STATUS
-    
+
     mov ASCII_X, 0
     mov ASCII_Y, Y_LONGE
     mov SI, offset TERRENO_LONGE_SPRITE
@@ -2216,33 +2214,34 @@ INICIA_JOGO proc
     call DESENHA_ASCII_PALETA
 
     add ASCII_Y, LINHAS_ASCII
-    mov AL, [TERRENO_PERTO_PALETA + 1]
+    mov AL, [TERRENO_PERTO_PALETA + 1]       ; Usa a cor da camada proxima ao apagar o jipe.
     mov CX, LARG_TELA
     mov DX, PREENCHE_PERTO
     call PREENCHER_LINHAS
-    
+
     mov ASCII_Y, Y_SUPERFICIE
     mov AL, COR_SUPERFICIE
     mov CX, LARG_TELA
     mov DX, ALTURA_SUPERFICIE
     call PREENCHER_LINHAS
-    
-    mov ASCII_X, 10 
-    sub ASCII_Y, ALTURA_JIPE    
+
+    mov ASCII_X, 10
+    sub ASCII_Y, ALTURA_JIPE
     mov SI, offset JIPE_SPRITE
     mov BX, offset JIPE_PALETA
     mov CX, LARGURA_JIPE
     mov DX, ALTURA_JIPE
     call DESENHA_ASCII_PALETA
-    
+
     mov AH, 00H
     int 1AH
     mov TEMPO_DECORRIDO, DX
-    
-jogo_loop:
-    call ESPERA_RETRACO
 
-    call CONTAGEM_TEMPO
+    ; Sincroniza cada iteracao com o retraco vertical.
+jogo_loop:
+    call ESPERA_RETRACO                      ; Evita atualizar em frequencia superior ao ciclo vertical.
+
+    call CONTAGEM_TEMPO                      ; Verifica se houve atualizacao do segundo exibido.
     cmp AL, 1
     jne verifica_teclado
 
@@ -2251,29 +2250,31 @@ jogo_loop:
 
     call ATUALIZA_TEMPO
 
+    ; Le Esc sem bloquear a animacao.
 verifica_teclado:
-    ; teclado para Esc
+
     mov AH, 01H
     int 16H
     jz  atualiza_jipe
-    
+
     mov AH, 00H
     int 16H
     cmp AL, 1BH
     je  jogo_fim
+    ; Escolhe a velocidade conforme o estado atual das setas.
 atualiza_jipe:
-    ; velocidade normal: direita
+
     mov JIPE_VEL, 1
 
-    ; seta esquerda: anda para a esquerda
     cmp TECLA_ESQ, 1
     jne verifica_direita
     mov JIPE_VEL, -1
 verifica_direita:
-    ; seta direita: aumenta a velocidade para a direita
+
     cmp TECLA_DIR, 1
     jne move_jipe
     mov JIPE_VEL, 2
+    ; Verifica os limites permitidos antes de mover.
 move_jipe:
     mov AX, JIPE_VEL
 
@@ -2300,7 +2301,7 @@ move_jipe:
     mov FUNDO_COR, AL
 
     pop AX
-    call MOVER_SPRITE
+    call MOVER_SPRITE                        ; Apaga, desloca e redesenha usando a mesma rotina.
 
     mov AX, ASCII_X
     mov JIPE_X, AX
@@ -2308,13 +2309,15 @@ move_jipe:
 jogo_volta:
     jmp jogo_loop
 
+    ; Sai do loop e retorna ao fluxo principal.
 jogo_fim:
     ret
-    
+
 INICIA_JOGO endp
 
-; =====================================================================
-; START
+; ---------------------------------------------------------------------
+; START: prepara segmentos, instala o teclado e controla menu e partida.
+; ---------------------------------------------------------------------
 start:
     mov AX, @data
     mov DS, AX
@@ -2322,45 +2325,37 @@ start:
     mov AX, 0A000H
     mov ES, AX                               ; ES = segmento da VRAM
     cld                                      ; SI/DI incrementam
-    
-    mov AX, 3509H
+
+    mov AX, 3509H                            ; Consulta o endereco atual da interrupcao de teclado.
     int 21H
 
-    mov OLD_INT09_OFF, BX
-    mov OLD_INT09_SEG, ES
+    mov OLD_INT09_OFF, BX                    ; Guarda o offset do handler anterior.
+    mov OLD_INT09_SEG, ES                    ; Guarda o segmento do handler anterior.
 
     push DS
     mov DX, offset TRATA_TECLADO
     mov AX, SEG TRATA_TECLADO
     mov DS, AX
-    mov AX, 2509H
+    mov AX, 2509H                            ; Instala TRATA_TECLADO como novo handler da INT 09H.
     int 21H
     pop DS
 
     call MODO_VIDEO
+    ; Reconstroi o menu apos cada partida.
 menu:
     call LIMPAR_TELA
     call MENU_INICIAL                        ; t?tulo + menu: define OPCAO_SEL
     cmp OPCAO_SEL, 0
     jne fim_programa                         ; 1 = Sair
     call INICIA_JOGO                         ; 0 = Jogar
-    call GAME_OVER
+    call GAME_OVER                           ; Exibe a tela final antes de retornar ao menu.
     jmp menu
 
+    ; Restaura o modo texto e termina a execucao.
 fim_programa:
-    mov DX, OLD_INT09_OFF
-    mov AX, OLD_INT09_SEG
-
-    push DS
-    mov DS, AX
-    mov AX, 2509H
-    int 21H
-    pop DS
-
     mov AX, 0003H
-    int 10H
-
+    int 10H                                  ; volta ao modo texto
     mov AX, 4C00H
-    int 21H
+    int 21H                                  ; encerra
 
 end start
