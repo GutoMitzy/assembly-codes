@@ -986,7 +986,10 @@ OPCAO_SEL   db 0
 ; =====================
 CORACOES  dw offset CORACAO1_SPRITE, offset CORACAO2_SPRITE, offset CORACAO3_SPRITE
 CORACAO_LARG dw 10, 14, 18
-ALTURA_CORACAO equ 12                    
+ALTURA_CORACAO equ 12
+VIDAS     db 3                       ; coracoes restantes (1 a 3)
+X_CORACAO equ 5
+Y_CORACAO equ 5                    
 
 ; =====================
 ; REL?GIO
@@ -1006,6 +1009,7 @@ TAM_NAVE     equ LARGURA_NAVE * ALTURA_NAVE      ; 196 bytes por nave
 ; =====================
 LARGURA_JIPE equ 20
 ALTURA_JIPE  equ 10
+X_MAX_JIPE equ LARG_TELA / 2 - LARGURA_JIPE      ; 140: borda direita do jipe em 160
 
 ; =====================
 ; TERRENOS
@@ -1058,6 +1062,8 @@ TECLA_DIR   db 0
 ; SCORE/TEMPO
 ; =====================
 SCORE_INICIAL db "0000", 0
+TXT_SCORE     db "SCORE ", 0
+
 TEMPO_INICIAL dw 10
 TEMPO_DECORRIDO dw 0
 TEMPO_TEXTO     db "10", 0
@@ -2008,8 +2014,8 @@ botoes_enter:
 DESENHAR_BOTOES endp
 
 ;-------------------------------------------------------------------
-; GAME_OVER: limpa a tela, desenha o titulo de fim de jogo e espera
-;            uma tecla
+; GAME_OVER: limpa a tela, desenha o titulo de fim de jogo, o score
+;            (SCORE_INICIAL) e espera uma tecla
 ; Altera:  AX, CX, DX, SI, DI, ASCII_X e ASCII_Y
 ;-------------------------------------------------------------------
 GAME_OVER proc
@@ -2017,7 +2023,7 @@ GAME_OVER proc
     
     mov DI, offset COR_GAMEOVER            
     mov ASCII_X, X_INICIAL_TITULO              ; posi??o inicial do t?tulo
-    add ASCII_X, 65                            ; offset extra pelas 2 linhas            
+    add ASCII_X, 70                            ; offset extra pelas 2 linhas            
     mov ASCII_Y, Y_INICIAL_TITULO
     mov CX, LARGURA_GAMEOVER                   ; avan?o em X
     mov DX, ALTURA_GAMEOVER                    ; avan?o em Y
@@ -2025,17 +2031,94 @@ GAME_OVER proc
     call ESCREVER_TEXTO
     
     mov ASCII_X, 50
-    mov ASCII_Y, 150
+    mov ASCII_Y, 170
     mov CX, LARGURA
     mov DX, ALTURA
     mov SI, offset TXT_GAMEOVER
     call ESCREVER_TEXTO
+    
+    mov DI, offset COR_SCORE
+    mov ASCII_X, 135                           ; (320 - 10 * 5) / 2: centraliza "SCORE 0000"
+    mov ASCII_Y, 120                           ; logo acima do texto de continuar (Y = 150)
+    mov CX, LARGURA
+    mov DX, ALTURA
+    mov SI, offset TXT_SCORE
+    call ESCREVER_TEXTO                        ; "SCORE " (ASCII_X fica no fim do texto)
+    mov SI, offset SCORE_INICIAL
+    call ESCREVER_TEXTO                        ; valor logo em seguida
     
     mov AH, 00H
     int 16H                                  ; espera uma tecla
     
     ret
 GAME_OVER endp
+
+;-------------------------------------------------------------------
+; DESENHA_CORACOES: desenha o sprite com a quantidade de coracoes
+;                   indicada por VIDAS (1 a 3)
+; Entrada: VIDAS; ES = 0A000H
+; Altera:  ASCII_X e ASCII_Y
+;-------------------------------------------------------------------
+DESENHA_CORACOES proc
+    push BX
+    push CX
+    push DX
+    push SI
+
+    mov BL, VIDAS
+    xor BH, BH
+    dec BX
+    shl BX, 1                        ; BX = (VIDAS - 1) * 2 (tabelas de words)
+    mov SI, CORACOES[BX]             ; sprite com essa quantidade
+    mov CX, CORACAO_LARG[BX]         ; largura desse sprite
+    mov ASCII_X, X_CORACAO
+    mov ASCII_Y, Y_CORACAO
+    mov BX, offset COR_CORACAO
+    mov DX, ALTURA_CORACAO
+    call DESENHA_ASCII_PALETA
+
+    pop SI
+    pop DX
+    pop CX
+    pop BX
+    ret
+DESENHA_CORACOES endp
+
+;-------------------------------------------------------------------
+; DEC_CORACAO: remove um coracao: apaga a area dos coracoes com
+;              PREENCHER_LINHAS e redesenha com um a menos
+; Entrada: VIDAS; ES = 0A000H
+; Saida:   CF = 0: coracao removido, ainda ha vidas
+;          CF = 1: era o ultimo coracao (nada e alterado); o
+;                  chamador deve encerrar a partida
+; Altera:  ASCII_X e ASCII_Y
+;-------------------------------------------------------------------
+DEC_CORACAO proc
+    cmp VIDAS, 1
+    ja  dec_remove                   ; ainda ha mais de um coracao
+    stc                              ; era o ultimo: sinaliza o fim
+    ret
+
+dec_remove:
+    push AX
+    push CX
+    push DX
+
+    dec VIDAS
+    mov ASCII_X, X_CORACAO
+    mov ASCII_Y, Y_CORACAO
+    mov AL, COR_FUNDO                ; cor com que o fundo e apagado
+    mov CX, CORACAO_LARG[4]          ; largura maxima (3 coracoes)
+    mov DX, ALTURA_CORACAO
+    call PREENCHER_LINHAS            ; apaga o desenho atual
+    call DESENHA_CORACOES            ; desenha com um a menos
+
+    pop DX
+    pop CX
+    pop AX
+    clc                              ; CF = 0 (os pop nao alteram as flags)
+    ret
+DEC_CORACAO endp
 
 ; ---------------------------------------------------------------------
 ; MENU_INICIAL: desenha o t?tulo do jogo e o menu, e espera o
@@ -2070,13 +2153,7 @@ MENU_INICIAL proc
 MENU_INICIAL endp
 
 EXIBE_STATUS proc
-    mov ASCII_X, 5
-    mov ASCII_Y, 5
-    mov SI, CORACOES[4]
-    mov BX, offset COR_CORACAO
-    mov CX, CORACAO_LARG[4]
-    mov DX, ALTURA_CORACAO
-    call DESENHA_ASCII_PALETA
+    call DESENHA_CORACOES
     
     ; score 0000
     mov ASCII_X, (LARG_TELA - 4 * (LARGURA + 1)) / 2
@@ -2094,7 +2171,7 @@ EXIBE_STATUS proc
     mov DX, ALTURA_RELOGIO
     call DESENHA_ASCII_PALETA
 
-    ; tempo 60
+    ; tempo restante
     add ASCII_X, 10
     add ASCII_Y, 1
     mov SI, offset TEMPO_TEXTO
@@ -2112,6 +2189,7 @@ EXIBE_STATUS endp
 INICIA_JOGO proc
     call LIMPAR_TELA
     mov JIPE_X, 10
+    mov VIDAS, 3
 
     call EXIBE_STATUS
     
@@ -2178,12 +2256,11 @@ verifica_teclado:
     mov AH, 01H
     int 16H
     jz  atualiza_jipe
-
+    
     mov AH, 00H
     int 16H
     cmp AL, 1BH
     je  jogo_fim
-
 atualiza_jipe:
     ; velocidade normal: direita
     mov JIPE_VEL, 1
@@ -2192,13 +2269,11 @@ atualiza_jipe:
     cmp TECLA_ESQ, 1
     jne verifica_direita
     mov JIPE_VEL, -1
-
 verifica_direita:
     ; seta direita: aumenta a velocidade para a direita
     cmp TECLA_DIR, 1
     jne move_jipe
     mov JIPE_VEL, 2
-
 move_jipe:
     mov AX, JIPE_VEL
 
@@ -2208,7 +2283,7 @@ move_jipe:
     cmp DX, 0
     jl  jogo_volta
 
-    cmp DX, LARG_TELA - LARGURA_JIPE
+    cmp DX, X_MAX_JIPE                       ; nao cruza a metade da tela
     jg  jogo_volta
 
     push AX
@@ -2273,9 +2348,19 @@ menu:
     jmp menu
 
 fim_programa:
+    mov DX, OLD_INT09_OFF
+    mov AX, OLD_INT09_SEG
+
+    push DS
+    mov DS, AX
+    mov AX, 2509H
+    int 21H
+    pop DS
+
     mov AX, 0003H
-    int 10H                                  ; volta ao modo texto
+    int 10H
+
     mov AX, 4C00H
-    int 21H                                  ; encerra
+    int 21H
 
 end start
