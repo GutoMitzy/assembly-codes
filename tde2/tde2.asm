@@ -136,28 +136,28 @@ JIPE_SPRITE db "00000000000111110000"
             db "02300023000000023000"
             
                 ;cratera1
-CRATERAS_SPRITE db "22000000000022"
-                db "22000000000021"
-                db "12220000000221"
-                db "11122000000211"
-                db "11122000002111"
-                db "11211200021111"
+CRATERAS_SPRITE db "22333333333322"
+                db "22333333333321"
+                db "12223333333221"
+                db "11122333333211"
+                db "11122333332111"
+                db "11211233321111"
                 db "11111122211111"
                 ;cratera2
-                db "20000000000222"
-                db "12000000000211"
-                db "11220000002211"
-                db "11112200022111"
-                db "11111220021111"
+                db "23333333333222"
+                db "12333333333211"
+                db "11223333332211"
+                db "11112233322111"
+                db "11111223321111"
                 db "11111212221111"
                 db "11111111211111"
                 ;cratera3
-                db "22200000000222"
-                db "11200000002111"
-                db "11200000022111"
-                db "11200000221111"
-                db "11122000211111"
-                db "11112002111111"
+                db "22233333333222"
+                db "11233333332111"
+                db "11233333322111"
+                db "11233333221111"
+                db "11122333211111"
+                db "11112332111111"
                 db "11121222111111"
                 
               ;rocha1
@@ -912,7 +912,7 @@ NAVE_PALETA         db COR_FUNDO, 09H, 0EH, 04H
 JIPE_PALETA         db COR_FUNDO, 0CH, 09H, 01H, 04H
 TERRENO_LONGE_PALETA db COR_FUNDO, 01H, 09H
 TERRENO_PERTO_PALETA db COR_FUNDO, 0AH, 02H
-CRATERA_PALETA      db COR_FUNDO, 0EH, 06H
+CRATERA_PALETA      db 0, 0EH, 06H, 0AH             ; 1 = amarelo, 2 = marrom, 3 = verde (buraco)
 ROCHA_PALETA        db COR_FUNDO, 06H, 04H
 
 ; =====================
@@ -1085,6 +1085,24 @@ LARGURA_CRATERA equ 14
 ALTURA_CRATERA  equ 7
 TAM_CRATERA     equ LARGURA_CRATERA * ALTURA_CRATERA      ; 98 bytes por cratera
 
+NUM_CRATERAS      equ 3              ; no maximo 3 visiveis (espacamento >= 150 px em 334 px)
+CRATERA_LIVRE     equ 8000H          ; marca de slot livre em CRATERAS_X
+DIST_MIN_CRATERA  equ 150            ; distancia minima entre crateras (px)
+DIST_VAR_CRATERA  equ 100            ; distancia extra aleatoria: 0 a 99 px
+VEL_CHAO          equ 1              ; px de rolagem por quadro
+
+CRATERAS_X     dw NUM_CRATERAS dup(CRATERA_LIVRE)   ; X atual (com sinal) de cada slot
+CRATERAS_TIPO  db NUM_CRATERAS dup(0)               ; variacao 0, 1 ou 2 de cada slot
+CRATERA_PROX   dw 0                                 ; px de rolagem ate criar a proxima
+SEMENTE        dw 1                                 ; semente do gerador aleatorio
+
+; bits de estado de cada cratera, guardados em CRATERAS_TIPO (bits 0 e 1 = variacao)
+MASCARA_TIPO     equ 03H
+FLAG_SOBREVOADA  equ 04H             ; o jipe passou sobre ela no ar
+FLAG_TOCADA      equ 08H             ; o jipe encostou nela no chao
+FLAG_PONTUADA    equ 10H             ; os pontos ja foram dados
+MARGEM_CRATERA equ 5                 ; px ignorados em cada lado da cratera na colisao
+
 ; =====================
 ; MOVIMENTO
 ; =====================
@@ -1110,6 +1128,10 @@ TXT_SCORE     db "SCORE ", 0
 TEMPO_INICIAL dw 10
 TEMPO_DECORRIDO dw 0
 TEMPO_TEXTO     db "10", 0
+
+SCORE_CRATERA equ 50                 ; pontos por cratera saltada
+X_SCORE       equ 135                ; (320 - 10 * LARGURA) / 2
+Y_SCORE       equ 8
 
 ; =====================
 ; ???
@@ -2376,6 +2398,173 @@ MENU_INICIAL proc
     pop AX
     ret
 MENU_INICIAL endp
+    
+;-------------------------------------------------------------------
+; DESENHA_SCORE: apaga a area do score na barra de status e escreve
+;                "SCORE" seguido do valor atual (SCORE_INICIAL)
+; Entrada: ES = 0A000H
+; Altera:  ASCII_X, ASCII_Y (os registradores sao preservados)
+;-------------------------------------------------------------------
+DESENHA_SCORE proc
+    push AX
+    push CX
+    push DX
+    push SI
+    push DI
+
+    mov ASCII_X, X_SCORE
+    mov ASCII_Y, Y_SCORE
+    mov AL, COR_FUNDO
+    mov CX, 10 * LARGURA             ; "SCORE " + 4 digitos
+    mov DX, ALTURA
+    call PREENCHER_LINHAS            ; apaga o valor anterior
+
+    mov DI, offset COR_BOTAO         ; paleta branca
+    mov CX, LARGURA
+    mov DX, ALTURA
+    mov SI, offset TXT_SCORE
+    call ESCREVER_TEXTO              ; "SCORE " (ASCII_X fica no fim do texto)
+    mov SI, offset SCORE_INICIAL
+    call ESCREVER_TEXTO              ; valor logo em seguida
+
+    pop DI
+    pop SI
+    pop DX
+    pop CX
+    pop AX
+    ret
+DESENHA_SCORE endp
+
+;-------------------------------------------------------------------
+; SOMAR_SCORE: soma um valor ao score (string de 4 digitos em
+;              SCORE_INICIAL, maximo 9999) e atualiza a barra de status
+; Entrada: AX = valor a somar (por exemplo, SCORE_CRATERA)
+;          ES = 0A000H
+; Altera:  SCORE_INICIAL, ASCII_X, ASCII_Y
+;          (todos os registradores sao preservados)
+;-------------------------------------------------------------------
+SOMAR_SCORE proc
+    push AX
+    push BX
+    push CX
+    push DX
+    push SI
+
+    mov SI, AX                       ; SI = valor a somar
+    xor AX, AX                       ; AX = numero lido da string
+    xor BX, BX                       ; BX = indice do digito
+
+soma_le:
+    mov CX, 10
+    mul CX                           ; AX = AX * 10 (DX = 0)
+    mov CL, SCORE_INICIAL[BX]
+    sub CL, '0'
+    xor CH, CH
+    add AX, CX                       ; acrescenta o digito
+    inc BX
+    cmp BX, 4
+    jb  soma_le
+
+    add AX, SI                       ; soma o valor
+    cmp AX, 9999
+    jbe soma_converte
+    mov AX, 9999                     ; limita ao maximo de 4 digitos
+
+soma_converte:
+    mov BX, 3                        ; escreve do digito menos significativo
+    mov CX, 10
+
+soma_escreve:
+    xor DX, DX
+    div CX                           ; AX = quociente, DX = digito
+    add DL, '0'
+    mov SCORE_INICIAL[BX], DL
+    dec BX
+    jns soma_escreve
+
+    call DESENHA_SCORE               ; atualiza a barra de status
+
+    pop SI
+    pop DX
+    pop CX
+    pop BX
+    pop AX
+    ret
+SOMAR_SCORE endp
+
+;-------------------------------------------------------------------
+; VERIFICA_SALTO_CRATERAS: para cada cratera na tela, marca se o jipe
+;     passou sobre ela no ar (FLAG_SOBREVOADA) ou encostou nela no
+;     chao (FLAG_TOCADA); quando a cratera passa inteira para tras do
+;     jipe com o salto limpo, soma SCORE_CRATERA ao score (uma vez)
+; Entrada: JIPE_X, SALTO_FASE, CRATERAS_X e CRATERAS_TIPO; ES = 0A000H
+; Altera:  CRATERAS_TIPO, SCORE_INICIAL, ASCII_X, ASCII_Y
+;          (todos os registradores sao preservados)
+;-------------------------------------------------------------------
+VERIFICA_SALTO_CRATERAS proc
+    push AX
+    push BX
+    push CX
+    push DX
+    push SI
+
+    xor BX, BX                       ; BX = indice do slot * 2
+
+verif_slot:
+    mov AX, CRATERAS_X[BX]
+    cmp AX, CRATERA_LIVRE
+    je  verif_prox                   ; slot livre
+    mov SI, BX
+    shr SI, 1                        ; SI = indice do slot
+    mov DL, CRATERAS_TIPO[SI]        ; DL = variacao + estado
+    test DL, FLAG_PONTUADA
+    jnz verif_prox                   ; ja contou
+
+    add AX, MARGEM_CRATERA           ; AX = borda esquerda da area de colisao
+    mov CX, JIPE_X
+    add CX, LARGURA_JIPE             ; CX = borda direita do jipe
+    cmp AX, CX
+    jge verif_prox                   ; area da cratera ainda a direita do jipe
+
+    mov CX, AX
+    add CX, LARGURA_CRATERA - 2 * MARGEM_CRATERA   ; borda direita da area de colisao
+    cmp CX, JIPE_X
+    jle verif_passou                 ; area da cratera inteira atras do jipe
+
+    cmp SALTO_FASE, 0                ; ha sobreposicao horizontal
+    je  verif_toca
+    or  DL, FLAG_SOBREVOADA          ; jipe no ar sobre a cratera
+    jmp verif_grava
+
+verif_toca:
+    or  DL, FLAG_TOCADA              ; jipe no chao sobre a cratera
+
+verif_grava:
+    mov CRATERAS_TIPO[SI], DL
+    jmp verif_prox
+
+verif_passou:
+    mov AL, DL
+    and AL, FLAG_SOBREVOADA + FLAG_TOCADA
+    cmp AL, FLAG_SOBREVOADA          ; so sobrevoou, sem tocar
+    jne verif_prox
+    or  DL, FLAG_PONTUADA
+    mov CRATERAS_TIPO[SI], DL        ; marca antes de pontuar
+    mov AX, SCORE_CRATERA
+    call SOMAR_SCORE                 ; +50 e atualiza a barra de status
+
+verif_prox:
+    add BX, 2
+    cmp BX, NUM_CRATERAS * 2
+    jb  verif_slot
+
+    pop SI
+    pop DX
+    pop CX
+    pop BX
+    pop AX
+    ret
+VERIFICA_SALTO_CRATERAS endp
 
 ;-------------------------------------------------------------------
 ; EXIBE_STATUS: desenha vidas, pontuacao e relogio.
@@ -2386,13 +2575,7 @@ MENU_INICIAL endp
 ;-------------------------------------------------------------------
 EXIBE_STATUS proc
     call DESENHA_CORACOES
-
-    mov ASCII_X, (LARG_TELA - 4 * (LARGURA + 1)) / 2
-    mov SI, offset SCORE_INICIAL
-    mov DI, offset COR_SCORE
-    mov CX, 6
-    mov DX, 8
-    call ESCREVER_TEXTO
+    call DESENHA_SCORE
 
     mov ASCII_X, 290
     mov ASCII_Y, 5
@@ -2529,6 +2712,164 @@ jipe_bloqueado:
 MOVER_JIPE endp
 
 ;-------------------------------------------------------------------
+; ALEATORIO: gera um numero pseudo-aleatorio (congruencial linear
+;            de 16 bits, periodo completo)
+; Entrada: CX = faixa (>= 1)
+; Saida:   AX = valor entre 0 e CX - 1
+; Altera:  SEMENTE (os demais registradores sao preservados)
+;-------------------------------------------------------------------
+ALEATORIO proc
+    push DX
+
+    mov AX, SEMENTE
+    mov DX, 25173
+    mul DX                           ; DX:AX = SEMENTE * 25173
+    add AX, 13849
+    mov SEMENTE, AX                  ; nova semente
+    xor DX, DX
+    div CX                           ; DX = resto da divisao por CX
+    mov AX, DX
+
+    pop DX
+    ret
+ALEATORIO endp
+
+;-------------------------------------------------------------------
+; INICIA_CRATERAS: libera todos os slots de crateras e zera o contador
+;                  (chamar no inicio de cada partida)
+; Entrada: nenhuma
+; Altera:  CRATERAS_X e CRATERA_PROX
+;          (todos os registradores sao preservados)
+;-------------------------------------------------------------------
+INICIA_CRATERAS proc
+    push BX
+
+    xor BX, BX
+cratera_zera:
+    mov CRATERAS_X[BX], CRATERA_LIVRE
+    add BX, 2
+    cmp BX, NUM_CRATERAS * 2
+    jb  cratera_zera
+    mov CRATERA_PROX, 0
+
+    pop BX
+    ret
+INICIA_CRATERAS endp
+
+;-------------------------------------------------------------------
+; CRIA_CRATERA: ocupa um slot livre com uma cratera na borda direita
+;               da tela (X = LARG_TELA) e sorteia a variacao (0 a 2)
+; Entrada: nenhuma
+; Saida:   CF = 0: cratera criada; CF = 1: nao ha slot livre
+; Altera:  CRATERAS_X, CRATERAS_TIPO e SEMENTE
+;          (todos os registradores sao preservados)
+;-------------------------------------------------------------------
+CRIA_CRATERA proc
+    push AX
+    push BX
+    push CX
+
+    xor BX, BX                       ; BX = indice do slot * 2
+cria_busca:
+    cmp CRATERAS_X[BX], CRATERA_LIVRE
+    je  cria_achou
+    add BX, 2
+    cmp BX, NUM_CRATERAS * 2
+    jb  cria_busca
+    stc                              ; sem slot livre
+    jmp cria_fim
+
+cria_achou:
+    mov CRATERAS_X[BX], LARG_TELA    ; nasce logo apos a borda direita
+    mov CX, 3
+    call ALEATORIO                   ; AX = 0, 1 ou 2
+    shr BX, 1                        ; BX = indice do slot
+    mov CRATERAS_TIPO[BX], AL
+    clc
+
+cria_fim:
+    pop CX                           ; os pop nao alteram CF
+    pop BX
+    pop AX
+    ret
+CRIA_CRATERA endp
+
+;-------------------------------------------------------------------
+; ROLA_CRATERAS: avanca um quadro da rolagem: cria uma cratera nova
+;                quando percorreu a distancia sorteada (minimo
+;                DIST_MIN_CRATERA px) e move todas VEL_CHAO px para a
+;                esquerda; as que saem por inteiro liberam o slot
+; Entrada: ES = 0A000H
+; Altera:  CRATERAS_X, CRATERAS_TIPO, CRATERA_PROX, SEMENTE,
+;          ASCII_X, ASCII_Y e FUNDO_COR
+;-------------------------------------------------------------------
+ROLA_CRATERAS proc
+    push AX
+    push BX
+    push CX
+    push DX
+    push SI
+    push DI
+
+    sub CRATERA_PROX, VEL_CHAO       ; rolou VEL_CHAO px neste quadro
+    jg  rola_move                    ; ainda nao e hora de criar outra
+    call CRIA_CRATERA
+    jc  rola_move                    ; sem slot livre: tenta no proximo quadro
+    mov CX, DIST_VAR_CRATERA
+    call ALEATORIO                   ; AX = 0 a DIST_VAR_CRATERA - 1
+    add AX, DIST_MIN_CRATERA
+    mov CRATERA_PROX, AX             ; proxima nasce depois de 150 a 249 px
+
+rola_move:
+    xor BX, BX                       ; BX = indice do slot * 2
+
+rola_proximo:
+    cmp CRATERAS_X[BX], CRATERA_LIVRE
+    je  rola_seguinte                ; slot livre: nada a mover
+
+    push BX                          ; guarda o indice (BX vira a paleta)
+    mov AX, CRATERAS_X[BX]
+    mov ASCII_X, AX
+    mov ASCII_Y, Y_SUPERFICIE
+    shr BX, 1
+    mov AL, CRATERAS_TIPO[BX]        ; AL = variacao + estado
+    and AL, MASCARA_TIPO             ; <- novo: so a variacao (0 a 2)
+    xor AH, AH
+    mov DX, TAM_CRATERA
+    mul DX                           ; AX = variacao * TAM_CRATERA
+    mov SI, offset CRATERAS_SPRITE
+    add SI, AX                       ; SI = sprite sorteado
+    mov BX, offset CRATERA_PALETA
+    mov CX, LARGURA_CRATERA
+    mov DX, ALTURA_CRATERA
+    mov DI, MODO_SOME                ; sai pela esquerda e nao volta
+    mov FUNDO_COR, COR_SUPERFICIE    ; apagar devolve a cor da superficie
+    mov AX, -VEL_CHAO
+    call MOVER_SPRITE
+    pop BX                           ; indice do slot (nao altera CF)
+    jc  rola_libera                  ; saiu por inteiro da tela
+    mov AX, ASCII_X                  ; novo X
+    mov CRATERAS_X[BX], AX
+    jmp rola_seguinte
+
+rola_libera:
+    mov CRATERAS_X[BX], CRATERA_LIVRE
+
+rola_seguinte:
+    add BX, 2
+    cmp BX, NUM_CRATERAS * 2
+    jb  rola_proximo
+
+    pop DI
+    pop SI
+    pop DX
+    pop CX
+    pop BX
+    pop AX
+    ret
+ROLA_CRATERAS endp
+
+;-------------------------------------------------------------------
 ; INICIA_JOGO: inicializa a partida e executa o loop principal.
 ; Entrada: sprites, paletas e configuracoes da partida
 ;          TECLA_ESQ, TECLA_DIR = estados das setas
@@ -2544,8 +2885,9 @@ INICIA_JOGO proc
     mov JIPE_ALT, 0
     mov SALTO_FASE, 0
     mov VIDAS, 3
-
+    
     call EXIBE_STATUS
+    call INICIA_CRATERAS
 
     mov ASCII_X, 0
     mov ASCII_Y, Y_LONGE
@@ -2601,6 +2943,9 @@ jogo_loop:
     call ATUALIZA_TIRO
     mov BX, offset TIRO_FRENTE
     call ATUALIZA_TIRO
+    
+    call ROLA_CRATERAS
+    call VERIFICA_SALTO_CRATERAS
     
     call CONTAGEM_TEMPO                      ; Verifica se houve atualizacao do segundo exibido.
     cmp AL, 1
