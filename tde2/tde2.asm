@@ -1010,6 +1010,49 @@ TAM_NAVE     equ LARGURA_NAVE * ALTURA_NAVE      ; 196 bytes por nave
 LARGURA_JIPE equ 20
 ALTURA_JIPE  equ 10
 X_MAX_JIPE equ LARG_TELA / 2 - LARGURA_JIPE      ; 140: borda direita do jipe em 160
+SALTO_VX       equ 1                 ; px por quadro que o salto impoe se nao ha seta pressionada
+
+; salto trapezoidal
+SALTO_ALTURA   equ 15                ; altura do topo (px)
+SALTO_VEL      equ 3                 ; px por quadro na subida e na descida
+SALTO_TOPO_PX  equ 5                 ; deslocamento horizontal que se mantem no topo
+
+JIPE_ALT       dw 0                  ; altura atual acima do chao (0 a 15)
+SALTO_FASE     db 0                  ; 0 = chao, 1 = subindo, 2 = topo, 3 = descendo
+SALTO_PX       db 0                  ; px horizontais acumulados no topo
+
+; =====================
+; TIROS
+; =====================
+COR_TIRO_CIMA     equ 0EH            ; amarelo
+COR_TIRO_FRENTE   equ 04H            ; vermelho
+LARG_TIRO_CIMA    equ 2
+ALT_TIRO_CIMA     equ 4
+LARG_TIRO_FRENTE  equ 4
+ALT_TIRO_FRENTE   equ 2              ; os dois tem 8 pixels (= tamanho do buffer de fundo)
+VEL_TIRO_CIMA     equ 4              ; px por quadro
+VEL_TIRO_FRENTE   equ 5
+Y_LIMITE_TIRO     equ 15             ; linha limite do tiro superior
+ALCANCE_TIRO      equ 50             ; px que o tiro frontal percorre
+CANHAO_CIMA_X     equ 12             ; X do canhao superior dentro do jipe
+CANHAO_FRENTE_Y   equ 4              ; Y do canhao frontal dentro do jipe
+
+; campos do registro de tiro (todos words, exceto o buffer de fundo)
+T_ATIVO equ 0                        ; 0 = livre, 1 = em movimento
+T_X     equ 2
+T_Y     equ 4
+T_LIM   equ 6                        ; limite: X maximo (frontal) ou Y minimo (superior)
+T_DX    equ 8                        ; deslocamento em X por quadro
+T_DY    equ 10                       ; deslocamento em Y por quadro (negativo = sobe)
+T_LARG  equ 12
+T_ALT   equ 14
+T_COR   equ 16
+T_FUNDO equ 18                       ; 8 bytes: fundo salvo sob o tiro
+
+TIRO_CIMA   dw 0, 0, 0, Y_LIMITE_TIRO, 0, -VEL_TIRO_CIMA, LARG_TIRO_CIMA, ALT_TIRO_CIMA, COR_TIRO_CIMA
+            db 8 dup(0)
+TIRO_FRENTE dw 0, 0, 0, 0, VEL_TIRO_FRENTE, 0, LARG_TIRO_FRENTE, ALT_TIRO_FRENTE, COR_TIRO_FRENTE
+            db 8 dup(0)
 
 ; =====================
 ; TERRENOS
@@ -1882,6 +1925,200 @@ MOVER_SPRITES_MENU proc
 MOVER_SPRITES_MENU endp
 
 ;-------------------------------------------------------------------
+; COPIA_FUNDO: copia um retangulo entre a VRAM e um buffer: salva o
+;              que esta na tela ou o restaura (pixel a pixel)
+; Entrada: AL = 0 salva (VRAM -> buffer), diferente de 0 restaura
+;          SI = buffer (largura * altura bytes)
+;          CX = largura, DX = altura
+;          ASCII_X, ASCII_Y = canto superior esquerdo
+;          ES = 0A000H
+; Todos os registradores sao preservados
+;-------------------------------------------------------------------
+COPIA_FUNDO proc
+    push AX
+    push BX
+    push CX
+    push DX
+    push SI
+    push DI
+    push BP
+
+    mov BP, DX                       ; BP = altura
+    mov BH, AL                       ; BH = sentido da copia
+    mov AX, ASCII_Y
+    mov DX, LARG_TELA
+    mul DX                           ; AX = Y * 320 (sobrescreve DX)
+    add AX, ASCII_X
+    mov DI, AX                       ; DI = canto superior esquerdo na VRAM
+    mov DX, CX                       ; DX = largura
+
+fundo_linha:
+    mov CX, DX                       ; CX = pixels da linha
+
+fundo_pixel:
+    test BH, BH
+    jnz fundo_restaura
+    mov AL, ES:[DI]                  ; salva: VRAM -> buffer
+    mov [SI], AL
+    jmp fundo_proximo
+
+fundo_restaura:
+    mov AL, [SI]                     ; restaura: buffer -> VRAM
+    mov ES:[DI], AL
+
+fundo_proximo:
+    inc SI
+    inc DI
+    loop fundo_pixel
+
+    add DI, LARG_TELA                ; desce uma linha...
+    sub DI, DX                       ; ...e volta ao X inicial
+    dec BP
+    jnz fundo_linha
+
+    pop BP
+    pop DI
+    pop SI
+    pop DX
+    pop CX
+    pop BX
+    pop AX
+    ret
+COPIA_FUNDO endp
+
+;-------------------------------------------------------------------
+; DESENHA_TIRO: guarda o fundo sob o tiro e o desenha como um
+;               retangulo de uma cor
+; Entrada: BX = endereco do registro do tiro; ES = 0A000H
+; Altera:  ASCII_X e ASCII_Y (os registradores sao preservados)
+;-------------------------------------------------------------------
+DESENHA_TIRO proc
+    push AX
+    push CX
+    push DX
+    push SI
+
+    mov AX, [BX + T_X]
+    mov ASCII_X, AX
+    mov AX, [BX + T_Y]
+    mov ASCII_Y, AX
+    lea SI, [BX + T_FUNDO]
+    mov CX, [BX + T_LARG]
+    mov DX, [BX + T_ALT]
+    xor AL, AL                       ; 0 = salvar
+    call COPIA_FUNDO                 ; guarda o fundo sob o tiro
+    mov AL, [BX + T_COR]
+    call PREENCHER_LINHAS            ; desenha o tiro
+
+    pop SI
+    pop DX
+    pop CX
+    pop AX
+    ret
+DESENHA_TIRO endp
+
+;-------------------------------------------------------------------
+; ATUALIZA_TIRO: avanca um quadro de um tiro ativo: restaura o fundo,
+;                move, e desenha na nova posicao; ao chegar no limite
+;                (superior: linha Y_LIMITE_TIRO; frontal: alcance) o
+;                tiro desaparece e o registro fica livre
+; Entrada: BX = endereco do registro do tiro; ES = 0A000H
+; Altera:  ASCII_X e ASCII_Y (os registradores sao preservados)
+;-------------------------------------------------------------------
+ATUALIZA_TIRO proc
+    push AX
+    push CX
+    push DX
+    push SI
+
+    cmp word ptr [BX + T_ATIVO], 0
+    je  tiro_fim                     ; nao ha tiro
+
+    mov AX, [BX + T_X]
+    mov ASCII_X, AX
+    mov AX, [BX + T_Y]
+    mov ASCII_Y, AX
+    lea SI, [BX + T_FUNDO]
+    mov CX, [BX + T_LARG]
+    mov DX, [BX + T_ALT]
+    mov AL, 1                        ; 1 = restaurar
+    call COPIA_FUNDO                 ; apaga o tiro devolvendo o fundo
+
+    mov AX, [BX + T_X]
+    add AX, [BX + T_DX]
+    mov [BX + T_X], AX               ; novo X
+    mov AX, [BX + T_Y]
+    add AX, [BX + T_DY]
+    mov [BX + T_Y], AX               ; novo Y
+
+    cmp word ptr [BX + T_DX], 0
+    je  tiro_vertical
+
+    mov AX, [BX + T_X]               ; tiro frontal: chegou ao alcance?
+    cmp AX, [BX + T_LIM]
+    jge tiro_desativa
+    jmp tiro_desenha
+
+tiro_vertical:
+    mov AX, [BX + T_Y]               ; tiro superior: chegou ao limite?
+    cmp AX, [BX + T_LIM]
+    jle tiro_desativa
+
+tiro_desenha:
+    call DESENHA_TIRO
+    jmp tiro_fim
+
+tiro_desativa:
+    mov word ptr [BX + T_ATIVO], 0   ; some e libera o registro
+
+tiro_fim:
+    pop SI
+    pop DX
+    pop CX
+    pop AX
+    ret
+ATUALIZA_TIRO endp
+
+;-------------------------------------------------------------------
+; DISPARAR: dispara os dois canhoes do jipe na posicao atual dele;
+;           cada canhao so dispara se o seu tiro anterior ja sumiu
+; Entrada: JIPE_X; ES = 0A000H
+; Altera:  ASCII_X e ASCII_Y (os registradores sao preservados)
+;-------------------------------------------------------------------
+DISPARAR proc
+    push AX
+    push BX
+
+    mov BX, offset TIRO_CIMA
+    cmp word ptr [BX + T_ATIVO], 0
+    jne disparar_frente              ; ja ha um tiro superior na tela
+    mov AX, JIPE_X
+    add AX, CANHAO_CIMA_X
+    mov [BX + T_X], AX
+    mov word ptr [BX + T_Y], JIPE_Y - ALT_TIRO_CIMA   ; logo acima do jipe
+    mov word ptr [BX + T_ATIVO], 1
+    call DESENHA_TIRO
+
+disparar_frente:
+    mov BX, offset TIRO_FRENTE
+    cmp word ptr [BX + T_ATIVO], 0
+    jne disparar_fim                 ; ja ha um tiro frontal na tela
+    mov AX, JIPE_X
+    add AX, LARGURA_JIPE + 2         ; 2 px de folga: o jipe anda ate 2 px por quadro
+    mov [BX + T_X], AX
+    add AX, ALCANCE_TIRO
+    mov [BX + T_LIM], AX             ; X onde o tiro desaparece
+    mov word ptr [BX + T_Y], JIPE_Y + CANHAO_FRENTE_Y
+    mov word ptr [BX + T_ATIVO], 1
+    call DESENHA_TIRO
+
+disparar_fim:
+    pop BX
+    pop AX
+    ret
+DISPARAR endp
+
+;-------------------------------------------------------------------
 ; DESENHAR_BOTOES: desenha e controla a selecao do menu.
 ; Entrada: OPCAO_SEL = indice inicialmente selecionado
 ;          BOTOES_TXT, BOTOES_Y = textos e posicoes dos botoes
@@ -2177,6 +2414,121 @@ EXIBE_STATUS proc
 EXIBE_STATUS endp
 
 ;-------------------------------------------------------------------
+; ATUALIZA_SALTO: avanca um quadro do salto trapezoidal: subida
+;                 (SALTO_VEL px por quadro ate SALTO_ALTURA), topo
+;                 (ate acumular SALTO_TOPO_PX px de deslocamento
+;                 horizontal) e descida (SALTO_VEL px por quadro)
+; Entrada: AX = deslocamento horizontal do quadro (com sinal)
+; Altera:  JIPE_ALT, SALTO_FASE e SALTO_PX
+;          (todos os registradores sao preservados)
+;-------------------------------------------------------------------
+ATUALIZA_SALTO proc
+    push AX
+
+    cmp SALTO_FASE, 0
+    je  salto_fim                    ; no chao: nada a fazer
+    cmp SALTO_FASE, 2
+    je  salto_topo
+    ja  salto_descida                ; fase 3
+
+    mov AX, JIPE_ALT                 ; fase 1: subindo
+    add AX, SALTO_VEL
+    cmp AX, SALTO_ALTURA
+    jl  salto_grava                  ; ainda nao chegou ao topo
+    mov AX, SALTO_ALTURA             ; chegou: trava na altura maxima
+    mov SALTO_FASE, 2
+    mov SALTO_PX, 0
+    jmp salto_grava
+
+salto_topo:                          ; fase 2: soma |deslocamento|
+    test AX, AX
+    jns salto_soma
+    neg AX
+    
+salto_soma:
+    add SALTO_PX, AL
+    cmp SALTO_PX, SALTO_TOPO_PX
+    jb  salto_fim                    ; ainda nao andou o suficiente
+    mov SALTO_FASE, 3                ; andou: comeca a descer
+    jmp salto_fim
+    
+salto_conta:
+    add SALTO_PX, AL
+    
+salto_descida:                       ; fase 3: descendo
+    mov AX, JIPE_ALT
+    sub AX, SALTO_VEL
+    jg  salto_grava                  ; ainda no ar
+    xor AX, AX                       ; tocou o chao
+    mov SALTO_FASE, 0
+
+salto_grava:
+    mov JIPE_ALT, AX
+
+salto_fim:
+    pop AX
+    ret
+ATUALIZA_SALTO endp
+
+;-------------------------------------------------------------------
+; MOVER_JIPE: apaga o jipe, aplica o deslocamento horizontal (se
+;             ficar entre 0 e X_MAX_JIPE), avanca o salto e desenha
+;             o jipe na nova posicao (X e altura)
+; Entrada: AX = deslocamento horizontal do quadro (com sinal)
+;          FUNDO_COR = cor com que o jipe e apagado; ES = 0A000H
+; Altera:  JIPE_X, JIPE_ALT, SALTO_FASE, SALTO_PX, ASCII_X, ASCII_Y
+;          (todos os registradores sao preservados)
+;-------------------------------------------------------------------
+MOVER_JIPE proc
+    push AX
+    push BX
+    push CX
+    push DX
+    push SI
+
+    push AX                          ; guarda o deslocamento
+
+    mov AX, JIPE_X                   ; apaga o jipe na posicao atual
+    mov ASCII_X, AX
+    mov AX, JIPE_Y
+    sub AX, JIPE_ALT
+    mov ASCII_Y, AX
+    mov AL, FUNDO_COR
+    mov CX, LARGURA_JIPE
+    mov DX, ALTURA_JIPE
+    call APAGAR_SPRITE
+
+    pop AX                           ; AX = deslocamento
+    mov BX, JIPE_X
+    add BX, AX                       ; BX = novo X
+    cmp BX, 0
+    jl  jipe_bloqueado               ; passaria da borda esquerda
+    cmp BX, X_MAX_JIPE
+    jg  jipe_bloqueado               ; passaria da metade da tela
+    mov JIPE_X, BX
+jipe_bloqueado:
+    call ATUALIZA_SALTO              ; avanca o salto (AX = deslocamento)
+
+    mov AX, JIPE_X                   ; desenha na nova posicao
+    mov ASCII_X, AX
+    mov AX, JIPE_Y
+    sub AX, JIPE_ALT
+    mov ASCII_Y, AX
+    mov SI, offset JIPE_SPRITE
+    mov BX, offset JIPE_PALETA
+    mov CX, LARGURA_JIPE
+    mov DX, ALTURA_JIPE
+    call DESENHA_SPRITE_RECORTADO
+
+    pop SI
+    pop DX
+    pop CX
+    pop BX
+    pop AX
+    ret
+MOVER_JIPE endp
+
+;-------------------------------------------------------------------
 ; INICIA_JOGO: inicializa a partida e executa o loop principal.
 ; Entrada: sprites, paletas e configuracoes da partida
 ;          TECLA_ESQ, TECLA_DIR = estados das setas
@@ -2187,6 +2539,10 @@ EXIBE_STATUS endp
 INICIA_JOGO proc
     call LIMPAR_TELA
     mov JIPE_X, 10
+    mov word ptr TIRO_CIMA[T_ATIVO], 0
+    mov word ptr TIRO_FRENTE[T_ATIVO], 0
+    mov JIPE_ALT, 0
+    mov SALTO_FASE, 0
     mov VIDAS, 3
 
     call EXIBE_STATUS
@@ -2241,6 +2597,11 @@ INICIA_JOGO proc
 jogo_loop:
     call ESPERA_RETRACO                      ; Evita atualizar em frequencia superior ao ciclo vertical.
 
+    mov BX, offset TIRO_CIMA
+    call ATUALIZA_TIRO
+    mov BX, offset TIRO_FRENTE
+    call ATUALIZA_TIRO
+    
     call CONTAGEM_TEMPO                      ; Verifica se houve atualizacao do segundo exibido.
     cmp AL, 1
     jne verifica_teclado
@@ -2252,7 +2613,6 @@ jogo_loop:
 
     ; Le Esc sem bloquear a animacao.
 verifica_teclado:
-
     mov AH, 01H
     int 16H
     jz  atualiza_jipe
@@ -2260,11 +2620,21 @@ verifica_teclado:
     mov AH, 00H
     int 16H
     cmp AL, 1BH
-    je  jogo_fim
-    ; Escolhe a velocidade conforme o estado atual das setas.
+    jne verifica_espaco
+    jmp jogo_fim
+verifica_espaco:
+    cmp AL, 20H                      ; espaco
+    jne verifica_salto
+    call DISPARAR
+    
+verifica_salto:
+    cmp AH, 48H                      ; seta para cima: salta
+    jne atualiza_jipe
+    cmp SALTO_FASE, 0
+    jne atualiza_jipe                ; ja esta no ar
+    mov SALTO_FASE, 1
 atualiza_jipe:
-
-    mov JIPE_VEL, 1
+    mov JIPE_VEL, 0
 
     cmp TECLA_ESQ, 1
     jne verifica_direita
@@ -2276,35 +2646,24 @@ verifica_direita:
     mov JIPE_VEL, 2
     ; Verifica os limites permitidos antes de mover.
 move_jipe:
-    mov AX, JIPE_VEL
+    ; no ar e sem seta pressionada: o salto impoe o avanco horizontal
+    cmp JIPE_VEL, 0
+    jne move_jipe_ok                 ; ha seta: vale a seta
+    cmp SALTO_FASE, 0
+    je  move_jipe_ok                 ; no chao e parado: continua parado
+    mov JIPE_VEL, SALTO_VX           ; no ar sem seta: avanca SALTO_VX por quadro
+move_jipe_ok:
 
-    mov DX, JIPE_X
-    add DX, AX
+    cmp JIPE_VEL, 0
+    jne move_jipe_exec
+    cmp SALTO_FASE, 0
+    je  jogo_volta                   ; parado no chao: nada a redesenhar
 
-    cmp DX, 0
-    jl  jogo_volta
-
-    cmp DX, X_MAX_JIPE                       ; nao cruza a metade da tela
-    jg  jogo_volta
-
-    push AX
-
-    mov AX, JIPE_X
-    mov ASCII_X, AX
-    mov ASCII_Y, JIPE_Y
-    mov SI, offset JIPE_SPRITE
-    mov BX, offset JIPE_PALETA
-    mov CX, LARGURA_JIPE
-    mov DX, ALTURA_JIPE
-
+move_jipe_exec:
     mov AL, [TERRENO_PERTO_PALETA + 1]
-    mov FUNDO_COR, AL
-
-    pop AX
-    call MOVER_SPRITE                        ; Apaga, desloca e redesenha usando a mesma rotina.
-
-    mov AX, ASCII_X
-    mov JIPE_X, AX
+    mov FUNDO_COR, AL                ; fundo do jipe = cor do terreno perto
+    mov AX, JIPE_VEL
+    call MOVER_JIPE
 
 jogo_volta:
     jmp jogo_loop
