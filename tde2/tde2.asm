@@ -912,7 +912,7 @@ NAVE_PALETA         db COR_FUNDO, 09H, 0EH, 04H
 JIPE_PALETA         db COR_FUNDO, 0CH, 09H, 01H, 04H
 TERRENO_LONGE_PALETA db COR_FUNDO, 01H, 09H
 TERRENO_PERTO_PALETA db COR_FUNDO, 0AH, 02H
-CRATERA_PALETA      db 0, 0EH, 06H, 0AH             ; 1 = amarelo, 2 = marrom, 3 = verde (buraco)
+CRATERA_PALETA      db COR_FUNDO, 0EH, 06H, 0AH             ; 1 = amarelo, 2 = marrom, 3 = verde (buraco)
 ROCHA_PALETA        db COR_FUNDO, 06H, 04H
 
 ; =====================
@@ -1021,6 +1021,8 @@ JIPE_ALT       dw 0                  ; altura atual acima do chao (0 a 15)
 SALTO_FASE     db 0                  ; 0 = chao, 1 = subindo, 2 = topo, 3 = descendo
 SALTO_PX       db 0                  ; px horizontais acumulados no topo
 
+RODA_FIM_JIPE equ 17                 ; ultima coluna do sprite do jipe que tem roda
+
 ; =====================
 ; TIROS
 ; =====================
@@ -1077,6 +1079,23 @@ PREENCHE_PERTO      equ ALT_TELA - (Y_PERTO + LINHAS_ASCII)   ; 18 linhas
 LARGURA_ROCHA equ 12
 ALTURA_ROCHA  equ 10
 TAM_ROCHA     equ LARGURA_ROCHA * ALTURA_ROCHA      ; 120 bytes por rocha 
+
+Y_ROCHA          equ Y_SUPERFICIE - ALTURA_ROCHA   ; 183: logo acima da superficie
+NUM_ROCHAS       equ 3
+ROCHA_LIVRE      equ 8000H                         ; marca de slot livre
+DIST_MIN_ROCHA   equ 110                           ; distancia minima entre rochas (px)
+DIST_VAR_ROCHA   equ 100                           ; distancia extra aleatoria (0 a 99)
+DIST_ENTRE_OBST  equ 100                           ; espaco livre exigido na borda direita para criar obstaculos
+MARGEM_ROCHA     equ 3                             ; px ignorados em cada lado da rocha na colisao
+ALT_LIVRE_ROCHA  equ 6                             ; JIPE_ALT minima para passar por cima
+SCORE_ROCHA      equ 50
+FLAG_ATINGIDA    equ 20H                           ; rocha 4 ja levou o 1o disparo
+MARGEM_JIPE_ROCHA equ 4              ; px ignorados em cada ponta do jipe (sobram 12 px)
+
+ROCHAS_X    dw NUM_ROCHAS dup(ROCHA_LIVRE)         ; X atual (com sinal) de cada slot
+ROCHAS_TIPO db NUM_ROCHAS dup(0)                   ; bits 0 e 1 = tipo (0 a 3); demais bits = flags
+ROCHA_PROX  dw 0                                   ; px de rolagem ate criar a proxima
+PASSO_CHAO  dw VEL_CHAO                                   ; passo de rolagem do quadro (px)
 
 ; =====================
 ; CRATERAS
@@ -2493,11 +2512,75 @@ soma_escreve:
 SOMAR_SCORE endp
 
 ;-------------------------------------------------------------------
-; VERIFICA_SALTO_CRATERAS: para cada cratera na tela, marca se o jipe
-;     passou sobre ela no ar (FLAG_SOBREVOADA) ou encostou nela no
-;     chao (FLAG_TOCADA); quando a cratera passa inteira para tras do
-;     jipe com o salto limpo, soma SCORE_CRATERA ao score (uma vez)
-; Entrada: JIPE_X, SALTO_FASE, CRATERAS_X e CRATERAS_TIPO; ES = 0A000H
+; ACHA_BURACO: procura no bitmap de uma variacao de cratera as
+;              colunas ocupadas pelo digito '3' (o buraco)
+; Entrada: AL = variacao da cratera (0 a 2)
+; Saida:   CF = 0: AL = primeira coluna com '3', AH = ultima coluna
+;          CF = 1: o bitmap nao tem nenhum '3'
+; BX, DX e SI sao preservados
+;-------------------------------------------------------------------
+ACHA_BURACO proc
+    push BX
+    push DX
+    push SI
+
+    xor AH, AH                       ; AX = variacao
+    mov DX, TAM_CRATERA
+    mul DX                           ; AX = variacao * TAM_CRATERA (DX sobrescrito)
+    mov SI, offset CRATERAS_SPRITE
+    add SI, AX                       ; SI = bitmap da variacao
+    mov BH, 0FFH                     ; BH = menor coluna com '3' (0FFH = nenhuma)
+    xor BL, BL                       ; BL = maior coluna com '3'
+    mov DL, ALTURA_CRATERA           ; DL = linhas restantes
+
+buraco_linha:
+    xor DH, DH                       ; DH = coluna atual
+
+buraco_pixel:
+    cmp byte ptr [SI], '3'
+    jne buraco_seguinte
+    cmp DH, BH
+    jae buraco_max
+    mov BH, DH                       ; nova menor coluna
+buraco_max:
+    cmp DH, BL
+    jbe buraco_seguinte
+    mov BL, DH                       ; nova maior coluna
+
+buraco_seguinte:
+    inc SI
+    inc DH
+    cmp DH, LARGURA_CRATERA
+    jb  buraco_pixel
+    dec DL
+    jnz buraco_linha
+
+    cmp BH, 0FFH
+    je  buraco_nenhum
+    mov AL, BH                       ; AL = primeira coluna do buraco
+    mov AH, BL                       ; AH = ultima coluna do buraco
+    clc
+    jmp buraco_fim
+
+buraco_nenhum:
+    stc
+
+buraco_fim:
+    pop SI
+    pop DX
+    pop BX
+    ret
+ACHA_BURACO endp
+
+;-------------------------------------------------------------------
+; VERIFICA_SALTO_CRATERAS: para cada cratera na tela, compara o
+;     buraco (colunas com '3') com as rodas do jipe:
+;     - roda sobre o buraco e jipe no chao: colisao (CF = 1)
+;     - roda sobre o buraco e jipe no ar: marca FLAG_SOBREVOADA
+;     - buraco inteiro atras do jipe com o salto limpo: soma
+;       SCORE_CRATERA ao score (uma vez, FLAG_PONTUADA)
+; Entrada: JIPE_X, JIPE_ALT, CRATERAS_X e CRATERAS_TIPO; ES = 0A000H
+; Saida:   CF = 1: houve colisao; CF = 0: nenhuma colisao
 ; Altera:  CRATERAS_TIPO, SCORE_INICIAL, ASCII_X, ASCII_Y
 ;          (todos os registradores sao preservados)
 ;-------------------------------------------------------------------
@@ -2507,57 +2590,65 @@ VERIFICA_SALTO_CRATERAS proc
     push CX
     push DX
     push SI
+    push DI
 
     xor BX, BX                       ; BX = indice do slot * 2
 
 verif_slot:
-    mov AX, CRATERAS_X[BX]
-    cmp AX, CRATERA_LIVRE
+    mov DI, CRATERAS_X[BX]
+    cmp DI, CRATERA_LIVRE
     je  verif_prox                   ; slot livre
     mov SI, BX
     shr SI, 1                        ; SI = indice do slot
-    mov DL, CRATERAS_TIPO[SI]        ; DL = variacao + estado
-    test DL, FLAG_PONTUADA
+
+    mov AL, CRATERAS_TIPO[SI]
+    test AL, FLAG_PONTUADA
     jnz verif_prox                   ; ja contou
+    and AL, MASCARA_TIPO             ; AL = variacao (0 a 2)
+    call ACHA_BURACO                 ; AL = 1a coluna do buraco, AH = ultima
+    jc  verif_prox                   ; sem '3' no bitmap: nada a testar
 
-    add AX, MARGEM_CRATERA           ; AX = borda esquerda da area de colisao
-    mov CX, JIPE_X
-    add CX, LARGURA_JIPE             ; CX = borda direita do jipe
-    cmp AX, CX
-    jge verif_prox                   ; area da cratera ainda a direita do jipe
+    mov CL, AH
+    xor CH, CH
+    add CX, DI                       ; CX = X do fim do buraco na tela
+    xor AH, AH
+    add AX, DI                       ; AX = X do inicio do buraco na tela
 
-    mov CX, AX
-    add CX, LARGURA_CRATERA - 2 * MARGEM_CRATERA   ; borda direita da area de colisao
     cmp CX, JIPE_X
-    jle verif_passou                 ; area da cratera inteira atras do jipe
+    jl  verif_passou                 ; buraco inteiro atras do jipe
 
-    cmp SALTO_FASE, 0                ; ha sobreposicao horizontal
-    je  verif_toca
-    or  DL, FLAG_SOBREVOADA          ; jipe no ar sobre a cratera
-    jmp verif_grava
+    mov DX, JIPE_X
+    add DX, RODA_FIM_JIPE            ; DX = ultima coluna do jipe com roda
+    cmp AX, DX
+    jg  verif_prox                   ; buraco ainda a frente do jipe
 
-verif_toca:
-    or  DL, FLAG_TOCADA              ; jipe no chao sobre a cratera
+    cmp JIPE_ALT, 0                  ; ha sobreposicao: o jipe esta no ar?
+    jne verif_ar
+    stc                              ; roda no buraco, jipe no chao: colisao
+    jmp verif_fim
 
-verif_grava:
-    mov CRATERAS_TIPO[SI], DL
+verif_ar:
+    or  CRATERAS_TIPO[SI], FLAG_SOBREVOADA
     jmp verif_prox
 
 verif_passou:
-    mov AL, DL
-    and AL, FLAG_SOBREVOADA + FLAG_TOCADA
-    cmp AL, FLAG_SOBREVOADA          ; so sobrevoou, sem tocar
-    jne verif_prox
-    or  DL, FLAG_PONTUADA
-    mov CRATERAS_TIPO[SI], DL        ; marca antes de pontuar
+    test CRATERAS_TIPO[SI], FLAG_SOBREVOADA
+    jz  verif_prox                   ; nao passou por cima: sem pontos
+    or  CRATERAS_TIPO[SI], FLAG_PONTUADA
     mov AX, SCORE_CRATERA
     call SOMAR_SCORE                 ; +50 e atualiza a barra de status
 
 verif_prox:
     add BX, 2
     cmp BX, NUM_CRATERAS * 2
-    jb  verif_slot
+    jae verif_nada
+    jmp verif_slot                   ; salto longo
 
+verif_nada:
+    clc                              ; nenhuma colisao
+
+verif_fim:
+    pop DI                           ; os pop nao alteram CF
     pop SI
     pop DX
     pop CX
@@ -2565,6 +2656,23 @@ verif_prox:
     pop AX
     ret
 VERIFICA_SALTO_CRATERAS endp
+
+;-------------------------------------------------------------------
+; NOVO_JOGO: prepara uma partida nova: 3 vidas e score 0000.
+;            Os reinicios apos colisao nao a chamam, e por isso
+;            mantem as vidas e o score
+; Entrada: nenhuma
+; Altera:  VIDAS e SCORE_INICIAL
+;          (todos os registradores sao preservados)
+;-------------------------------------------------------------------
+NOVO_JOGO proc
+    mov VIDAS, 3
+    mov SCORE_INICIAL[0], '0'
+    mov SCORE_INICIAL[1], '0'
+    mov SCORE_INICIAL[2], '0'
+    mov SCORE_INICIAL[3], '0'
+    ret
+NOVO_JOGO endp
 
 ;-------------------------------------------------------------------
 ; EXIBE_STATUS: desenha vidas, pontuacao e relogio.
@@ -2712,27 +2820,71 @@ jipe_bloqueado:
 MOVER_JIPE endp
 
 ;-------------------------------------------------------------------
-; ALEATORIO: gera um numero pseudo-aleatorio (congruencial linear
-;            de 16 bits, periodo completo)
+; ALEATORIO: gera um numero pseudo-aleatorio (xorshift de 16 bits,
+;            periodo 65535; SEMENTE nunca pode ser 0)
 ; Entrada: CX = faixa (>= 1)
 ; Saida:   AX = valor entre 0 e CX - 1
 ; Altera:  SEMENTE (os demais registradores sao preservados)
 ;-------------------------------------------------------------------
 ALEATORIO proc
     push DX
+    push CX                          ; guarda a faixa (CL sera usado nos deslocamentos)
 
     mov AX, SEMENTE
-    mov DX, 25173
-    mul DX                           ; DX:AX = SEMENTE * 25173
-    add AX, 13849
+    mov DX, AX
+    mov CL, 7
+    shl DX, CL
+    xor AX, DX                       ; x = x xor (x << 7)
+    mov DX, AX
+    mov CL, 9
+    shr DX, CL
+    xor AX, DX                       ; x = x xor (x >> 9)
+    mov DX, AX
+    mov CL, 8
+    shl DX, CL
+    xor AX, DX                       ; x = x xor (x << 8)
     mov SEMENTE, AX                  ; nova semente
+
+    pop CX                           ; CX = faixa
     xor DX, DX
-    div CX                           ; DX = resto da divisao por CX
+    div CX                           ; DX = resto da divisao pela faixa
     mov AX, DX
 
     pop DX
     ret
 ALEATORIO endp
+
+;-------------------------------------------------------------------
+; INICIA_ALEATORIO: define uma semente diferente a cada chamada,
+;                   misturando os ticks do relogio da BIOS com o
+;                   contador do timer 8253 (muda a 1,19 MHz)
+; Entrada: nenhuma
+; Altera:  SEMENTE (todos os registradores sao preservados)
+;-------------------------------------------------------------------
+INICIA_ALEATORIO proc
+    push AX
+    push CX
+    push DX
+
+    mov AH, 00H
+    int 1AH                          ; CX:DX = ticks desde a meia-noite
+    xor DX, CX                       ; mistura os dois words
+    xor AL, AL
+    out 43H, AL                      ; trava o contador 0 do timer
+    in  AL, 40H                      ; byte baixo do contador
+    mov AH, AL
+    in  AL, 40H                      ; byte alto do contador
+    xor AX, DX                       ; mistura ticks e contador
+    jnz semente_ok
+    mov AX, 0ACE1H                   ; a semente nao pode ser zero
+semente_ok:
+    mov SEMENTE, AX
+
+    pop DX
+    pop CX
+    pop AX
+    ret
+INICIA_ALEATORIO endp
 
 ;-------------------------------------------------------------------
 ; INICIA_CRATERAS: libera todos os slots de crateras e zera o contador
@@ -2750,7 +2902,14 @@ cratera_zera:
     add BX, 2
     cmp BX, NUM_CRATERAS * 2
     jb  cratera_zera
-    mov CRATERA_PROX, 0
+    
+    push AX
+    push CX
+    mov CX, DIST_VAR_CRATERA
+    call ALEATORIO
+    mov CRATERA_PROX, AX             ; a 1a cratera nasce depois de 0 a 99 px
+    pop CX
+    pop AX
 
     pop BX
     ret
@@ -2768,7 +2927,9 @@ CRIA_CRATERA proc
     push AX
     push BX
     push CX
-
+    
+    call ESPACO_LIVRE
+    jc  cria_fim                     ; borda ocupada: tenta no proximo quadro
     xor BX, BX                       ; BX = indice do slot * 2
 cria_busca:
     cmp CRATERAS_X[BX], CRATERA_LIVRE
@@ -2870,6 +3031,372 @@ rola_seguinte:
 ROLA_CRATERAS endp
 
 ;-------------------------------------------------------------------
+; ESPACO_LIVRE: confere se a borda direita esta livre para criar um
+;               obstaculo (nenhuma cratera ou rocha com
+;               X > LARG_TELA - DIST_ENTRE_OBST)
+; Saida:   CF = 0: livre; CF = 1: ocupado
+;          (todos os registradores sao preservados)
+;-------------------------------------------------------------------
+ESPACO_LIVRE proc
+    push BX
+
+    xor BX, BX
+livre_crateras:
+    cmp CRATERAS_X[BX], LARG_TELA - DIST_ENTRE_OBST
+    jg  livre_ocupado
+    add BX, 2
+    cmp BX, NUM_CRATERAS * 2
+    jb  livre_crateras
+
+    xor BX, BX
+livre_rochas:
+    cmp ROCHAS_X[BX], LARG_TELA - DIST_ENTRE_OBST
+    jg  livre_ocupado
+    add BX, 2
+    cmp BX, NUM_ROCHAS * 2
+    jb  livre_rochas
+
+    clc
+    jmp livre_fim
+
+livre_ocupado:
+    stc
+
+livre_fim:
+    pop BX
+    ret
+ESPACO_LIVRE endp
+
+;-------------------------------------------------------------------
+; INICIA_ROCHAS: libera todos os slots de rochas (chamar no inicio
+;                de cada partida)
+; Altera:  ROCHAS_X e ROCHA_PROX
+;          (todos os registradores sao preservados)
+;-------------------------------------------------------------------
+INICIA_ROCHAS proc
+    push BX
+
+    xor BX, BX
+rocha_zera:
+    mov ROCHAS_X[BX], ROCHA_LIVRE
+    add BX, 2
+    cmp BX, NUM_ROCHAS * 2
+    jb  rocha_zera
+    
+    push AX
+    push CX
+    mov CX, DIST_VAR_ROCHA
+    call ALEATORIO
+    add AX, 60
+    mov ROCHA_PROX, AX               ; a 1a rocha nasce depois de 60 a 159 px
+    pop CX
+    pop AX
+ 
+    pop BX
+    ret
+INICIA_ROCHAS endp
+
+;-------------------------------------------------------------------
+; CRIA_ROCHA: ocupa um slot livre com uma rocha na borda direita da
+;             tela (X = LARG_TELA) e sorteia o tipo (0 a 3)
+; Saida:   CF = 0: rocha criada; CF = 1: borda ocupada ou sem slot
+; Altera:  ROCHAS_X, ROCHAS_TIPO e SEMENTE
+;          (todos os registradores sao preservados)
+;-------------------------------------------------------------------
+CRIA_ROCHA proc
+    push AX
+    push BX
+    push CX
+
+    call ESPACO_LIVRE
+    jc  rocha_cria_fim               ; CF = 1 mantido
+
+    xor BX, BX
+rocha_busca:
+    cmp ROCHAS_X[BX], ROCHA_LIVRE
+    je  rocha_achou
+    add BX, 2
+    cmp BX, NUM_ROCHAS * 2
+    jb  rocha_busca
+    stc                              ; sem slot livre
+    jmp rocha_cria_fim
+
+rocha_achou:
+    mov ROCHAS_X[BX], LARG_TELA      ; nasce logo apos a borda direita
+    mov CX, 4
+    call ALEATORIO                   ; AX = 0 a 3
+    shr BX, 1                        ; BX = indice do slot
+    mov ROCHAS_TIPO[BX], AL          ; tipo sorteado, flags zerados
+    clc
+
+rocha_cria_fim:
+    pop CX                           ; os pop nao alteram CF
+    pop BX
+    pop AX
+    ret
+CRIA_ROCHA endp
+
+;-------------------------------------------------------------------
+; ROLA_ROCHAS: avanca um quadro: cria uma rocha quando percorreu a
+;              distancia sorteada e move todas PASSO_CHAO px para a
+;              esquerda; as que saem por inteiro liberam o slot
+; Entrada: PASSO_CHAO (definido por ROLA_CRATERAS); ES = 0A000H
+; Altera:  ROCHAS_X, ROCHAS_TIPO, ROCHA_PROX, SEMENTE, ASCII_X,
+;          ASCII_Y e FUNDO_COR
+;          (todos os registradores sao preservados)
+;-------------------------------------------------------------------
+ROLA_ROCHAS proc
+    push AX
+    push BX
+    push CX
+    push DX
+    push SI
+    push DI
+
+    mov AX, PASSO_CHAO
+    sub ROCHA_PROX, AX               ; rolou PASSO_CHAO px neste quadro
+    jg  rocha_move
+    call CRIA_ROCHA
+    jc  rocha_move                   ; sem espaco: tenta no proximo quadro
+    mov CX, DIST_VAR_ROCHA
+    call ALEATORIO                   ; AX = 0 a DIST_VAR_ROCHA - 1
+    add AX, DIST_MIN_ROCHA
+    mov ROCHA_PROX, AX               ; proxima nasce depois de 110 a 209 px
+
+rocha_move:
+    mov AL, [TERRENO_PERTO_PALETA + 1]
+    mov FUNDO_COR, AL                ; fundo das rochas: terreno perto
+    xor BX, BX                       ; BX = indice do slot * 2
+
+rocha_proximo:
+    cmp ROCHAS_X[BX], ROCHA_LIVRE
+    je  rocha_seguinte               ; slot livre: nada a mover
+
+    push BX                          ; guarda o indice (BX vira a paleta)
+    mov AX, ROCHAS_X[BX]
+    mov ASCII_X, AX
+    mov ASCII_Y, Y_ROCHA
+    shr BX, 1
+    mov AL, ROCHAS_TIPO[BX]
+    and AL, MASCARA_TIPO             ; AL = tipo 0 a 3 (sem os flags)
+    xor AH, AH
+    mov DX, TAM_ROCHA
+    mul DX                           ; AX = tipo * TAM_ROCHA
+    mov SI, offset ROCHAS_SPRITE
+    add SI, AX                       ; SI = sprite da rocha
+    mov BX, offset ROCHA_PALETA
+    mov CX, LARGURA_ROCHA
+    mov DX, ALTURA_ROCHA
+    mov DI, MODO_SOME                ; sai pela esquerda e nao volta
+    mov AX, PASSO_CHAO
+    neg AX                           ; AX = -passo
+    call MOVER_SPRITE
+    pop BX                           ; indice do slot (nao altera CF)
+    jc  rocha_libera                 ; saiu por inteiro da tela
+    mov AX, ASCII_X                  ; novo X
+    mov ROCHAS_X[BX], AX
+    jmp rocha_seguinte
+
+rocha_libera:
+    mov ROCHAS_X[BX], ROCHA_LIVRE
+
+rocha_seguinte:
+    add BX, 2
+    cmp BX, NUM_ROCHAS * 2
+    jae rocha_fim
+    jmp rocha_proximo                ; salto longo
+
+rocha_fim:
+    pop DI
+    pop SI
+    pop DX
+    pop CX
+    pop BX
+    pop AX
+    ret
+ROLA_ROCHAS endp
+
+;-------------------------------------------------------------------
+; VERIFICA_ROCHAS: compara o jipe com cada rocha: no chao sobre a
+;     rocha = colisao (CF = 1); no ar (JIPE_ALT >= ALT_LIVRE_ROCHA)
+;     sobre ela = marca FLAG_SOBREVOADA; rocha inteira atras do jipe
+;     com o salto limpo soma SCORE_ROCHA (uma vez, FLAG_PONTUADA)
+; Entrada: JIPE_X, JIPE_ALT, ROCHAS_X e ROCHAS_TIPO; ES = 0A000H
+; Saida:   CF = 1: houve colisao; CF = 0: nenhuma colisao
+; Altera:  ROCHAS_TIPO, SCORE_INICIAL, ASCII_X, ASCII_Y
+;          (todos os registradores sao preservados)
+;-------------------------------------------------------------------
+VERIFICA_ROCHAS proc
+    push AX
+    push BX
+    push CX
+    push DX
+    push SI
+    push DI
+
+    xor BX, BX                       ; BX = indice do slot * 2
+
+rver_slot:
+    mov DI, ROCHAS_X[BX]
+    cmp DI, ROCHA_LIVRE
+    je  rver_prox                    ; slot livre
+    mov SI, BX
+    shr SI, 1                        ; SI = indice do slot
+    test ROCHAS_TIPO[SI], FLAG_PONTUADA
+    jnz rver_prox                    ; ja contou
+
+    mov AX, DI
+    add AX, MARGEM_ROCHA             ; AX = inicio da area de colisao da rocha
+    mov CX, DI
+    add CX, LARGURA_ROCHA - MARGEM_ROCHA   ; CX = fim da area de colisao
+    mov DX, JIPE_X
+    add DX, MARGEM_JIPE_ROCHA        ; DX = inicio da area de colisao do jipe
+    cmp CX, DX
+    jle rver_passou                  ; rocha inteira atras do jipe
+
+    mov DX, JIPE_X
+    add DX, LARGURA_JIPE - MARGEM_JIPE_ROCHA   ; DX = fim da area de colisao do jipe
+    cmp AX, DX
+    jge rver_prox                    ; rocha ainda a frente do jipe
+
+    cmp JIPE_ALT, ALT_LIVRE_ROCHA    ; ha sobreposicao: o jipe esta alto o bastante?
+    jl  rver_colide
+    or  ROCHAS_TIPO[SI], FLAG_SOBREVOADA
+    jmp rver_prox
+
+rver_colide:
+    stc                              ; jipe baixo sobre a rocha: colisao
+    jmp rver_fim
+
+rver_passou:
+    test ROCHAS_TIPO[SI], FLAG_SOBREVOADA
+    jz  rver_prox                    ; nao passou por cima: sem pontos
+    or  ROCHAS_TIPO[SI], FLAG_PONTUADA
+    mov AX, SCORE_ROCHA
+    call SOMAR_SCORE                 ; +50 e atualiza a barra de status
+
+rver_prox:
+    add BX, 2
+    cmp BX, NUM_ROCHAS * 2
+    jae rver_nada
+    jmp rver_slot                    ; salto longo
+
+rver_nada:
+    clc                              ; nenhuma colisao
+
+rver_fim:
+    pop DI                           ; os pop nao alteram CF
+    pop SI
+    pop DX
+    pop CX
+    pop BX
+    pop AX
+    ret
+VERIFICA_ROCHAS endp
+
+;-------------------------------------------------------------------
+; VERIFICA_TIRO_ROCHAS: testa se um tiro ativo atingiu alguma rocha.
+;     O tiro some (o fundo e devolvido). Rocha 1 (tipo 0): nao sofre
+;     efeito. Rochas 2 e 3 (tipos 1 e 2): destruidas no 1o acerto.
+;     Rocha 4 (tipo 3): destruida no 2o acerto (FLAG_ATINGIDA marca
+;     o 1o). Rocha destruida: apagada, slot liberado e +SCORE_ROCHA
+; Entrada: BX = endereco do registro do tiro; ES = 0A000H
+;          (chamar logo apos ATUALIZA_TIRO, antes de ROLA_ROCHAS)
+; Altera:  ROCHAS_X, ROCHAS_TIPO, SCORE_INICIAL, ASCII_X, ASCII_Y
+;          (todos os registradores sao preservados)
+;-------------------------------------------------------------------
+VERIFICA_TIRO_ROCHAS proc
+    push AX
+    push CX
+    push DX
+    push SI
+    push DI
+    push BP
+
+    cmp word ptr [BX + T_ATIVO], 0
+    jne tr_inicio
+    jmp tr_fim                       ; sem tiro na tela
+
+tr_inicio:
+    xor BP, BP                       ; BP = indice do slot * 2
+
+tr_slot:
+    mov DI, ROCHAS_X[BP]
+    cmp DI, ROCHA_LIVRE
+    je  tr_prox                      ; slot livre
+
+    mov AX, [BX + T_X]
+    add AX, [BX + T_LARG]            ; AX = borda direita do tiro
+    cmp AX, DI
+    jle tr_prox                      ; tiro ainda a esquerda da rocha
+    mov AX, [BX + T_X]
+    mov CX, DI
+    add CX, LARGURA_ROCHA            ; CX = borda direita da rocha
+    cmp AX, CX
+    jge tr_prox                      ; tiro ja passou da rocha
+
+    mov AX, [BX + T_Y]
+    add AX, [BX + T_ALT]             ; AX = base do tiro
+    cmp AX, Y_ROCHA
+    jle tr_prox                      ; tiro acima da rocha
+    mov AX, [BX + T_Y]
+    cmp AX, Y_ROCHA + ALTURA_ROCHA
+    jge tr_prox                      ; tiro abaixo da rocha
+    jmp tr_acertou                   ; acertou: tratamento mais abaixo
+
+tr_prox:
+    add BP, 2
+    cmp BP, NUM_ROCHAS * 2
+    jae tr_fim
+    jmp tr_slot                      ; salto longo
+
+tr_fim:
+    pop BP
+    pop DI
+    pop SI
+    pop DX
+    pop CX
+    pop AX
+    ret
+
+tr_acertou:
+    mov AX, [BX + T_X]               ; devolve o fundo e some com o tiro
+    mov ASCII_X, AX
+    mov AX, [BX + T_Y]
+    mov ASCII_Y, AX
+    lea SI, [BX + T_FUNDO]
+    mov CX, [BX + T_LARG]
+    mov DX, [BX + T_ALT]
+    mov AL, 1                        ; 1 = restaurar
+    call COPIA_FUNDO
+    mov word ptr [BX + T_ATIVO], 0
+
+    mov SI, BP
+    shr SI, 1                        ; SI = indice do slot
+    mov AL, ROCHAS_TIPO[SI]
+    and AL, MASCARA_TIPO             ; AL = tipo 0 a 3
+    jz  tr_fim                       ; rocha 1: indestrutivel
+    cmp AL, 3
+    jne tr_destroi                   ; rochas 2 e 3: 1 disparo
+    test ROCHAS_TIPO[SI], FLAG_ATINGIDA
+    jnz tr_destroi                   ; rocha 4: 2o disparo
+    or  ROCHAS_TIPO[SI], FLAG_ATINGIDA
+    jmp tr_fim                       ; rocha 4: 1o disparo, permanece
+
+tr_destroi:
+    mov ASCII_X, DI                  ; DI = X da rocha
+    mov ASCII_Y, Y_ROCHA
+    mov AL, [TERRENO_PERTO_PALETA + 1]
+    mov CX, LARGURA_ROCHA
+    mov DX, ALTURA_ROCHA
+    call APAGAR_SPRITE               ; apaga a rocha com a cor do terreno
+    mov ROCHAS_X[BP], ROCHA_LIVRE
+    mov AX, SCORE_ROCHA
+    call SOMAR_SCORE
+    jmp tr_fim
+VERIFICA_TIRO_ROCHAS endp
+
+;-------------------------------------------------------------------
 ; INICIA_JOGO: inicializa a partida e executa o loop principal.
 ; Entrada: sprites, paletas e configuracoes da partida
 ;          TECLA_ESQ, TECLA_DIR = estados das setas
@@ -2878,16 +3405,17 @@ ROLA_CRATERAS endp
 ;          Retorna quando Esc e pressionado ou o tempo acaba
 ;-------------------------------------------------------------------
 INICIA_JOGO proc
+inicio_jogo:                         ; ponto de reinicio apos uma colisao
     call LIMPAR_TELA
     mov JIPE_X, 10
     mov word ptr TIRO_CIMA[T_ATIVO], 0
     mov word ptr TIRO_FRENTE[T_ATIVO], 0
     mov JIPE_ALT, 0
     mov SALTO_FASE, 0
-    mov VIDAS, 3
     
     call EXIBE_STATUS
     call INICIA_CRATERAS
+    call INICIA_ROCHAS
 
     mov ASCII_X, 0
     mov ASCII_Y, Y_LONGE
@@ -2943,8 +3471,28 @@ jogo_loop:
     call ATUALIZA_TIRO
     mov BX, offset TIRO_FRENTE
     call ATUALIZA_TIRO
-    
-    call ROLA_CRATERAS
+
+    call VERIFICA_TIRO_ROCHAS
+    call ROLA_CRATERAS               ; define PASSO_CHAO
+    call ROLA_ROCHAS
+    call VERIFICA_SALTO_CRATERAS
+    jc  colidiu
+    call VERIFICA_ROCHAS
+    jnc sem_colisao                  ; CF = 0: sem colisao
+
+colidiu:
+    call DEC_CORACAO                 ; colisao: perde um coracao
+    jnc reinicia_jogo                ; CF = 0: ainda ha vidas
+    jmp jogo_fim                     ; CF = 1: era a ultima vida
+
+reinicia_jogo:
+    mov CX, 40                       ; pausa de ~0,7 s (opcional)
+pausa_colisao:
+    call ESPERA_RETRACO
+    loop pausa_colisao
+    jmp inicio_jogo                  ; reinicia sem empilhar chamadas
+
+sem_colisao:
     call VERIFICA_SALTO_CRATERAS
     
     call CONTAGEM_TEMPO                      ; Verifica se houve atualizacao do segundo exibido.
@@ -2967,6 +3515,7 @@ verifica_teclado:
     cmp AL, 1BH
     jne verifica_espaco
     jmp jogo_fim
+    
 verifica_espaco:
     cmp AL, 20H                      ; espaco
     jne verifica_salto
@@ -2978,18 +3527,19 @@ verifica_salto:
     cmp SALTO_FASE, 0
     jne atualiza_jipe                ; ja esta no ar
     mov SALTO_FASE, 1
+    
 atualiza_jipe:
     mov JIPE_VEL, 0
-
     cmp TECLA_ESQ, 1
     jne verifica_direita
     mov JIPE_VEL, -1
+    
 verifica_direita:
-
     cmp TECLA_DIR, 1
     jne move_jipe
     mov JIPE_VEL, 2
     ; Verifica os limites permitidos antes de mover.
+    
 move_jipe:
     ; no ar e sem seta pressionada: o salto impoe o avanco horizontal
     cmp JIPE_VEL, 0
@@ -2997,13 +3547,13 @@ move_jipe:
     cmp SALTO_FASE, 0
     je  move_jipe_ok                 ; no chao e parado: continua parado
     mov JIPE_VEL, SALTO_VX           ; no ar sem seta: avanca SALTO_VX por quadro
+    
 move_jipe_ok:
-
     cmp JIPE_VEL, 0
     jne move_jipe_exec
     cmp SALTO_FASE, 0
-    je  jogo_volta                   ; parado no chao: nada a redesenhar
-
+    je  jogo_volta ; parado no chao: nada a redesenhar
+    
 move_jipe_exec:
     mov AL, [TERRENO_PERTO_PALETA + 1]
     mov FUNDO_COR, AL                ; fundo do jipe = cor do terreno perto
@@ -3048,11 +3598,13 @@ start:
     ; Reconstroi o menu apos cada partida.
 menu:
     call LIMPAR_TELA
-    call MENU_INICIAL                        ; t?tulo + menu: define OPCAO_SEL
+    call MENU_INICIAL
     cmp OPCAO_SEL, 0
-    jne fim_programa                         ; 1 = Sair
-    call INICIA_JOGO                         ; 0 = Jogar
-    call GAME_OVER                           ; Exibe a tela final antes de retornar ao menu.
+    jne fim_programa                 ; 1 = Sair
+    call INICIA_ALEATORIO            ; semente nova a cada partida
+    call NOVO_JOGO                   ; <- novo: 3 vidas e score zerado
+    call INICIA_JOGO
+    call GAME_OVER
     jmp menu
 
     ; Restaura o modo texto e termina a execucao.
