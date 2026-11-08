@@ -1078,6 +1078,7 @@ T_LARG           equ 12               ; largura do tiro
 T_ALT            equ 14               ; altura do tiro
 T_COR            equ 16               ; cor do tiro
 T_FUNDO          equ 18               ; buffer de 8 bytes com o fundo salvo
+TAM_TIRO equ T_FUNDO + 8            ; = 26 bytes por registro de tiro (reutiliza o layout)
 
 TIRO_CIMA        dw 0, 0, 0, Y_LIMITE_TIRO, 0, -VEL_TIRO_CIMA, LARG_TIRO_CIMA, ALT_TIRO_CIMA, COR_TIRO_CIMA
                  db 8 dup(0)
@@ -1102,6 +1103,37 @@ PREENCHE_LONGE    equ ALT_TELA - (Y_LONGE + LINHAS_ASCII)
                   ; linhas de preenchimento abaixo do terreno longe
 PREENCHE_PERTO    equ ALT_TELA - (Y_PERTO + LINHAS_ASCII)
                   ; linhas de preenchimento abaixo do terreno perto
+                  
+; ============================================================
+; ALIENS (reutilizam NAVES_SPRITE / NAVE_PALETA / LARGURA_NAVE)
+; ============================================================
+NUM_ALIENS        equ 3
+ALIEN_Y_MIN       equ 15             ; faixa Y de spawn
+ALIEN_Y_MAX       equ 100
+ALIEN_DIST_MIN    equ 30             ; espacamento minimo vertical entre naves do grupo
+VEL_ALIEN         equ 1              ; px/quadro (esquerda)
+SCORE_ALIEN       equ 100
+ALIEN_SPAWN_DELAY equ 30             ; quadros entre grupos (~0,5s)
+
+COR_TIRO_ALIEN    equ 0FH            ; branco
+LARG_TIRO_ALIEN   equ 2
+ALT_TIRO_ALIEN    equ 4
+VEL_TIRO_ALIEN    equ 2              ; px/quadro (caindo)
+
+ALIENS_X      dw NUM_ALIENS dup(0)   ; X atual de cada alien
+ALIENS_Y      dw NUM_ALIENS dup(0)   ; Y fixo de cada alien
+ALIENS_ATIVO  dw NUM_ALIENS dup(0)   ; 0 = slot livre
+ALIENS_TIPO   db NUM_ALIENS dup(0)   ; 0..2: qual variacao de NAVES_SPRITE
+ALIEN_ATRASO  dw 0                   ; quadros ate criar o proximo grupo
+ALIEN_HIT_FLAG db 0                  ; 1 = algum tiro alien acertou o jipe
+
+; Bloco contiguo de NUM_ALIENS registros (mesmo layout de TIRO_CIMA/FRENTE)
+TIROS_ALIENS  dw 0,0,0,0,0, VEL_TIRO_ALIEN, LARG_TIRO_ALIEN, ALT_TIRO_ALIEN, COR_TIRO_ALIEN
+              db 8 dup(0)
+              dw 0,0,0,0,0, VEL_TIRO_ALIEN, LARG_TIRO_ALIEN, ALT_TIRO_ALIEN, COR_TIRO_ALIEN
+              db 8 dup(0)
+              dw 0,0,0,0,0, VEL_TIRO_ALIEN, LARG_TIRO_ALIEN, ALT_TIRO_ALIEN, COR_TIRO_ALIEN
+              db 8 dup(0)
 
 ; ============================================================
 ; ROLAGEM
@@ -2848,6 +2880,493 @@ rver_fim:
 VERIFICA_ROCHAS endp
 
 ; ---------------------------------------------------------------------
+; INICIA_ALIENS: libera todos os slots de alien e todos os tiros;
+;                arma o primeiro atraso de spawn.
+; ---------------------------------------------------------------------
+INICIA_ALIENS proc
+    push AX
+    push BX
+    push BP
+    push DI
+
+    xor BX, BX               ; BX = slot*2 (acesso a ALIENS_*)
+    xor BP, BP               ; BP = slot*TAM_TIRO (acesso a TIROS_ALIENS)
+
+ia_loop:
+    mov word ptr ALIENS_ATIVO[BX], 0
+    mov DI, offset TIROS_ALIENS
+    add DI, BP
+    mov word ptr [DI + T_ATIVO], 0
+    add BX, 2
+    add BP, TAM_TIRO
+    cmp BX, NUM_ALIENS*2
+    jb  ia_loop
+
+    mov ALIEN_ATRASO, ALIEN_SPAWN_DELAY
+    mov ALIEN_HIT_FLAG, 0
+
+    pop DI
+    pop BP
+    pop BX
+    pop AX
+    ret
+INICIA_ALIENS endp
+
+; ---------------------------------------------------------------------
+; CRIA_GRUPO_ALIENS: sorteia 1..3 aliens do mesmo tipo. O Y de cada
+; alien e' sorteado em [prev+30, 100 - (N-1-i)*30], garantindo dist
+; >= 30 px sem tentativa-e-erro.
+; ---------------------------------------------------------------------
+CRIA_GRUPO_ALIENS proc
+    push AX
+    push BX
+    push CX
+    push DX
+    push SI
+    push DI
+    push BP
+
+    ; Sorteia o tipo (0..2) do grupo
+    mov CX, 3
+    call ALEATORIO
+    mov SI, AX               ; SI = tipo (0..2)
+
+    ; Sorteia N (1..3)
+    mov CX, 3
+    call ALEATORIO
+    inc AX
+    mov BP, AX               ; BP = N
+
+    xor DI, DI               ; DI = I (0..N-1)
+    xor BX, BX               ; BX = I*2
+
+cga_loop:
+    ; min_y = (I==0) ? ALIEN_Y_MIN : ALIENS_Y[I-1] + ALIEN_DIST_MIN
+    test DI, DI
+    jz  cga_first
+    mov AX, ALIENS_Y[BX-2]
+    add AX, ALIEN_DIST_MIN
+    jmp cga_min_ready
+cga_first:
+    mov AX, ALIEN_Y_MIN
+cga_min_ready:
+    push AX                  ; guarda min_y (o mul sobrescreve DX)
+
+    mov AX, BP
+    sub AX, DI
+    dec AX                   ; AX = N-1-I
+    mov CX, ALIEN_DIST_MIN
+    mul CX                   ; AX = (N-1-I) * 30 (DX = 0)
+    mov CX, ALIEN_Y_MAX
+    sub CX, AX               ; CX = max_y
+
+    pop DX                   ; DX = min_y
+    sub CX, DX
+    inc CX                   ; CX = range = max_y - min_y + 1
+
+    call ALEATORIO           ; AX = 0..range-1 (preserva BX, DX, SI, DI, BP)
+    add AX, DX               ; AX = Y valido
+
+    mov ALIENS_Y[BX], AX
+    mov word ptr ALIENS_X[BX], LARG_TELA
+    mov word ptr ALIENS_ATIVO[BX], 1
+
+    mov AX, SI               ; tipo do grupo
+    mov ALIENS_TIPO[DI], AL  ; DI = I (byte-index)
+
+    add BX, 2
+    inc DI
+    cmp DI, BP
+    jb  cga_loop
+
+    mov ALIEN_ATRASO, ALIEN_SPAWN_DELAY
+
+    pop BP
+    pop DI
+    pop SI
+    pop DX
+    pop CX
+    pop BX
+    pop AX
+    ret
+CRIA_GRUPO_ALIENS endp
+
+; ---------------------------------------------------------------------
+; ROLA_ALIENS: move todos os aliens ativos 1px para a esquerda; se o
+; grupo inteiro saiu/destruiu, conta atraso e cria o proximo grupo.
+; ---------------------------------------------------------------------
+ROLA_ALIENS proc
+    push AX
+    push BX
+    push CX
+    push DX
+    push SI
+    push DI
+
+    ; Algum alien ativo?
+    xor BX, BX
+ra_check:
+    cmp word ptr ALIENS_ATIVO[BX], 0
+    jne ra_has_group
+    add BX, 2
+    cmp BX, NUM_ALIENS*2
+    jb  ra_check
+
+    dec ALIEN_ATRASO
+    jg  ra_fim
+    call CRIA_GRUPO_ALIENS
+    jmp ra_fim
+
+ra_has_group:
+    xor BX, BX
+
+ra_loop:
+    cmp word ptr ALIENS_ATIVO[BX], 0
+    je  ra_next
+
+    push BX                  ; guarda slot*2 (BX vira paleta em MOVER_SPRITE)
+    mov AX, ALIENS_X[BX]
+    mov ASCII_X, AX
+    mov AX, ALIENS_Y[BX]
+    mov ASCII_Y, AX
+
+    ; Seleciona a variacao do sprite: NAVES_SPRITE + tipo * TAM_NAVE
+    mov SI, BX
+    shr SI, 1                ; SI = slot
+    mov AL, ALIENS_TIPO[SI]
+    xor AH, AH
+    mov DX, TAM_NAVE
+    mul DX                   ; AX = tipo * TAM_NAVE
+    mov SI, offset NAVES_SPRITE
+    add SI, AX
+
+    mov BX, offset NAVE_PALETA
+    mov CX, LARGURA_NAVE
+    mov DX, ALTURA_NAVE
+    mov DI, MODO_SOME
+    mov FUNDO_COR, COR_FUNDO
+    mov AX, -VEL_ALIEN
+    call MOVER_SPRITE
+    pop BX
+
+    jc  ra_free              ; saiu pela esquerda
+    mov AX, ASCII_X
+    mov ALIENS_X[BX], AX
+    jmp ra_next
+
+ra_free:
+    mov word ptr ALIENS_ATIVO[BX], 0
+
+ra_next:
+    add BX, 2
+    cmp BX, NUM_ALIENS*2
+    jb  ra_loop
+
+ra_fim:
+    pop DI
+    pop SI
+    pop DX
+    pop CX
+    pop BX
+    pop AX
+    ret
+ROLA_ALIENS endp
+
+; ---------------------------------------------------------------------
+; ATIRA_ALIENS: cada alien ativo dispara se o seu slot de tiro estiver
+; livre. So dispara com alien totalmente visivel (COPIA_FUNDO nao
+; recorta -- um disparo de fora da tela corromperia a VRAM).
+; ---------------------------------------------------------------------
+ATIRA_ALIENS proc
+    push AX
+    push BX
+    push CX
+    push DX
+    push SI
+    push DI
+    push BP
+
+    xor BX, BX               ; slot*2
+    xor BP, BP               ; slot*TAM_TIRO
+
+atira_loop:
+    cmp word ptr ALIENS_ATIVO[BX], 0
+    jne atira_continue
+    jmp atira_next
+atira_continue:
+
+    mov AX, ALIENS_X[BX]
+    cmp AX, 0
+    jge atira_x_ok
+    jmp atira_next
+atira_x_ok:
+
+    add AX, LARGURA_NAVE
+    cmp AX, LARG_TELA
+    jle atira_x2_ok
+    jmp atira_next
+atira_x2_ok:
+
+    mov DI, offset TIROS_ALIENS
+    add DI, BP
+    cmp word ptr [DI + T_ATIVO], 0
+    je  atira_fire
+    jmp atira_next
+atira_fire:
+
+    ; X = centro horizontal do alien
+    mov AX, ALIENS_X[BX]
+    add AX, (LARGURA_NAVE - LARG_TIRO_ALIEN) / 2
+    mov [DI + T_X], AX
+
+    ; Y = logo abaixo do alien
+    mov AX, ALIENS_Y[BX]
+    add AX, ALTURA_NAVE + 1
+    mov [DI + T_Y], AX
+
+    mov word ptr [DI + T_ATIVO], 1
+
+    push BX
+    mov BX, DI
+    call DESENHA_TIRO
+    pop BX
+
+atira_next:
+    add BX, 2
+    add BP, TAM_TIRO
+    cmp BX, NUM_ALIENS*2
+    jb  atira_loop
+
+    pop BP
+    pop DI
+    pop SI
+    pop DX
+    pop CX
+    pop BX
+    pop AX
+    ret
+ATIRA_ALIENS endp
+
+; ---------------------------------------------------------------------
+; ATUALIZA_TIROS_ALIENS: move todos os tiros alienigenas 1 passo para
+; baixo. Checa jipe ANTES de superficie (o jipe fica acima do chao;
+; se fosse o contrario, o tiro morreria na superficie sem vitimar).
+; Saida: CF = 1 se algum tiro acertou o jipe
+; ---------------------------------------------------------------------
+ATUALIZA_TIROS_ALIENS proc
+    push AX
+    push BX
+    push CX
+    push DX
+    push SI
+    push DI
+    push BP
+
+    mov ALIEN_HIT_FLAG, 0
+
+    xor BX, BX               ; slot*2 (contador do loop)
+    xor BP, BP               ; slot*TAM_TIRO
+
+ata_loop:
+    mov DI, offset TIROS_ALIENS
+    add DI, BP
+
+    cmp word ptr [DI + T_ATIVO], 0
+    jne ata_process
+    jmp ata_next
+ata_process:
+
+    ; Restaura fundo sob o tiro
+    mov AX, [DI + T_X]
+    mov ASCII_X, AX
+    mov AX, [DI + T_Y]
+    mov ASCII_Y, AX
+    lea SI, [DI + T_FUNDO]
+    mov CX, [DI + T_LARG]
+    mov DX, [DI + T_ALT]
+    mov AL, 1
+    call COPIA_FUNDO
+
+    ; Move para baixo
+    mov AX, [DI + T_Y]
+    add AX, VEL_TIRO_ALIEN
+    mov [DI + T_Y], AX
+
+    ; ---- colisao horizontal com o jipe ----
+    mov CX, JIPE_X
+    add CX, LARGURA_JIPE
+    mov AX, [DI + T_X]
+    cmp AX, CX
+    jge ata_check_surface
+
+    mov DX, [DI + T_X]
+    add DX, [DI + T_LARG]
+    cmp DX, JIPE_X
+    jle ata_check_surface
+
+    ; ---- colisao vertical com o jipe ----
+    mov CX, JIPE_Y
+    sub CX, JIPE_ALT         ; jipe_top
+    mov AX, [DI + T_Y]
+    add AX, [DI + T_ALT]     ; shot_bottom
+    cmp AX, CX
+    jl  ata_check_surface
+
+    mov DX, JIPE_Y
+    sub DX, JIPE_ALT
+    add DX, ALTURA_JIPE      ; jipe_bottom
+    mov AX, [DI + T_Y]       ; shot_top
+    cmp AX, DX
+    jge ata_check_surface
+
+    ; Acertou o jipe
+    mov word ptr [DI + T_ATIVO], 0
+    mov ALIEN_HIT_FLAG, 1
+    jmp ata_next
+
+ata_check_surface:
+    mov AX, [DI + T_Y]
+    add AX, [DI + T_ALT]
+    cmp AX, Y_SUPERFICIE
+    jge ata_deactivate
+
+    ; Redesenha na nova posicao
+    mov AX, [DI + T_X]
+    mov ASCII_X, AX
+    mov AX, [DI + T_Y]
+    mov ASCII_Y, AX
+    push BX
+    mov BX, DI
+    call DESENHA_TIRO
+    pop BX
+    jmp ata_next
+
+ata_deactivate:
+    mov word ptr [DI + T_ATIVO], 0
+
+ata_next:
+    add BX, 2
+    add BP, TAM_TIRO
+    cmp BX, NUM_ALIENS*2
+    jae ata_done
+    jmp ata_loop
+
+ata_done:
+    cmp ALIEN_HIT_FLAG, 0
+    jne ata_ret_hit
+    clc
+    jmp ata_ret
+ata_ret_hit:
+    stc
+ata_ret:
+    pop BP
+    pop DI
+    pop SI
+    pop DX
+    pop CX
+    pop BX
+    pop AX
+    ret
+ATUALIZA_TIROS_ALIENS endp
+
+; ---------------------------------------------------------------------
+; VERIFICA_TIRO_CIMA_ALIENS: checa colisao do TIRO_CIMA com aliens.
+; Ao acertar: consome o tiro e destroi o alien (+SCORE_ALIEN).
+; Deve ser chamada ANTES de ATUALIZA_TIRO (o ultimo passo, que atinge
+; T_LIM, ainda deve ser testado contra o alien).
+; ---------------------------------------------------------------------
+VERIFICA_TIRO_CIMA_ALIENS proc
+    push AX
+    push BX
+    push CX
+    push DX
+    push SI
+    push DI
+
+    mov BX, offset TIRO_CIMA
+    cmp word ptr [BX + T_ATIVO], 0
+    jne vtca_continue
+    jmp vtca_fim
+vtca_continue:
+
+    xor DI, DI               ; DI = slot*2
+
+vtca_loop:
+    cmp word ptr ALIENS_ATIVO[DI], 0
+    je  vtca_next
+
+    ; ---- colisao horizontal ----
+    mov CX, ALIENS_X[DI]
+    add CX, LARGURA_NAVE
+    mov AX, [BX + T_X]
+    cmp AX, CX
+    jge vtca_next
+
+    mov DX, ALIENS_X[DI]
+    mov CX, [BX + T_X]
+    add CX, [BX + T_LARG]
+    cmp CX, DX
+    jle vtca_next
+
+    ; ---- colisao vertical ----
+    mov CX, ALIENS_Y[DI]
+    add CX, ALTURA_NAVE
+    mov AX, [BX + T_Y]
+    cmp AX, CX
+    jge vtca_next
+
+    mov DX, ALIENS_Y[DI]
+    mov CX, [BX + T_Y]
+    add CX, [BX + T_ALT]
+    cmp CX, DX
+    jle vtca_next
+
+    jmp vtca_hit
+
+vtca_next:
+    add DI, 2
+    cmp DI, NUM_ALIENS*2
+    jae vtca_fim
+    jmp vtca_loop
+
+vtca_hit:
+    ; Consome o tiro (devolve o fundo e marca inativo)
+    mov AX, [BX + T_X]
+    mov ASCII_X, AX
+    mov AX, [BX + T_Y]
+    mov ASCII_Y, AX
+    lea SI, [BX + T_FUNDO]
+    mov CX, [BX + T_LARG]
+    mov DX, [BX + T_ALT]
+    mov AL, 1
+    call COPIA_FUNDO
+    mov word ptr [BX + T_ATIVO], 0
+
+    ; Apaga o alien
+    mov AX, ALIENS_X[DI]
+    mov ASCII_X, AX
+    mov AX, ALIENS_Y[DI]
+    mov ASCII_Y, AX
+    mov AL, COR_FUNDO
+    mov CX, LARGURA_NAVE
+    mov DX, ALTURA_NAVE
+    call APAGAR_SPRITE
+    mov word ptr ALIENS_ATIVO[DI], 0
+
+    mov AX, SCORE_ALIEN
+    call SOMAR_SCORE
+
+vtca_fim:
+    pop DI
+    pop SI
+    pop DX
+    pop CX
+    pop BX
+    pop AX
+    ret
+VERIFICA_TIRO_CIMA_ALIENS endp
+
+; ---------------------------------------------------------------------
 ; DESENHA_CORACOES: desenha o sprite de coracoes correspondente a VIDAS.
 ; ---------------------------------------------------------------------
 DESENHA_CORACOES proc
@@ -3336,6 +3855,7 @@ inicio_jogo:                 ; reinicio apos colisao
     call EXIBE_STATUS
     call INICIA_CRATERAS
     call INICIA_ROCHAS
+    call INICIA_ALIENS          
 
     ; Desenha o cenario
     mov ASCII_X, 0
@@ -3385,29 +3905,34 @@ inicio_jogo:                 ; reinicio apos colisao
     mov TEMPO_DECORRIDO, DX
 
 jogo_loop:
-    call ESPERA_RETRACO      ; 1 iteracao por retraco vertical
+    call ESPERA_RETRACO
 
-    ; Tiro frontal x rochas: checar ANTES de mover o tiro, para que o
-    ; ultimo passo (que atinge T_LIM) ainda seja testado.
     mov BX, offset TIRO_FRENTE
     call VERIFICA_TIRO_ROCHAS
+    call VERIFICA_TIRO_CIMA_ALIENS   ; usa TIRO_CIMA internamente e preserva BX
 
     mov BX, offset TIRO_CIMA
     call ATUALIZA_TIRO
     mov BX, offset TIRO_FRENTE
     call ATUALIZA_TIRO
+    call ATUALIZA_TIROS_ALIENS       ; define ALIEN_HIT_FLAG
 
-    call ROLA_CRATERAS       ; rola crateras e rochas
+    call ROLA_CRATERAS               ; define PASSO_CHAO
     call ROLA_ROCHAS
+    call ROLA_ALIENS
+    call ATIRA_ALIENS
+
     call VERIFICA_SALTO_CRATERAS
     jc  colidiu
     call VERIFICA_ROCHAS
-    jnc sem_colisao
+    jc  colidiu
+    cmp ALIEN_HIT_FLAG, 0
+    je  sem_colisao                  ; nenhum tiro alienigena acertou o jipe
 
 colidiu:
-    call DEC_CORACAO
+    call DEC_CORACAO                 ; (resto igual: reinicia_jogo, pausa_colisao...)
     jnc reinicia_jogo
-    jmp jogo_fim             ; era a ultima vida
+    jmp jogo_fim
 
 reinicia_jogo:
     mov CX, 40               ; ~0,7s de pausa
