@@ -1,113 +1,4081 @@
 .model small
-.stack 100H   ; define uma pilha de 256 bytes (100H)
+.stack 100H
 
-.data 
-    GAME_TITLE db "                              ___      _             _ ", 13, 10
-       db "  /\/\   ___   ___  _ __     / _ \__ _| |_ _ __ ___ | |", 13, 10
-       db " /    \ / _ \ / _ \| '_ \   / /_)/ _` | __| '__/ _ \| |", 13, 10
-       db "/ /\/\ \ (_) | (_) | | | | / ___/ (_| | |_| | | (_) | |", 13, 10
-       db "\/    \/\___/ \___/|_| |_| \/    \__,_|\__|_|  \___/|_|", 13, 10
-       db 0
-    
-    ASCII_X dw 0
-    ASCII_Y dw 0
-    ASCII_COR db 15
+.data
 
-.code 
+; ============================================================
+; CONSTANTES
+; ============================================================
 
-;DEFINE O V?DEO PARA 320X200px (64000 bytes)
-;USA MEM?RIA EM A000:0000
+; Tela e fonte
+LARG_TELA        equ 320              ; largura da tela (px)
+ALT_TELA         equ 200              ; altura da tela (px)
+LARGURA_GLIFO          equ 5                ; largura do glifo de fonte (px)
+ALTURA_GLIFO           equ 8                ; altura do glifo de fonte (px)
+
+; Cores da paleta VGA 13h
+VERDE_CLARO      equ 0AH              ; verde claro
+VERDE            equ 02H              ; verde
+AMARELO          equ 0EH              ; amarelo
+MARROM           equ 06H              ; marrom
+VERMELHO         equ 04H              ; vermelho
+VERMELHO_CLARO   equ 0CH              ; vermelho claro
+BRANCO           equ 0FH              ; branco
+AZUL             equ 01H              ; azul
+AZUL_CLARO       equ 09H              ; azul claro
+COR_FUNDO        equ 0                ; cor de fundo (preto) para apagar sprites
+COR_SUPERFICIE   equ AMARELO                   ; faixa da superficie do chao
+
+; Titulo e Game Over
+LARGURA_TITULO   equ LARGURA_GLIFO          ; avanco X entre celulas do titulo
+ALTURA_TITULO    equ ALTURA_GLIFO           ; avanco Y entre celulas do titulo
+LARGURA_GAMEOVER equ 4                ; avanco X da mensagem de game over
+ALTURA_GAMEOVER  equ 7                ; avanco Y da mensagem de game over
+X_INICIAL_TITULO equ 22               ; X inicial do titulo centralizado
+Y_INICIAL_TITULO equ 10               ; Y inicial do titulo
+
+; Glifos de moldura e menu
+G_ESPACO         equ 0                ; glifo de espaco
+G_CANTO_SE       equ 10               ; canto superior esquerdo da moldura
+G_CANTO_SD       equ 11               ; canto superior direito da moldura
+G_CANTO_IE       equ 12               ; canto inferior esquerdo da moldura
+G_CANTO_ID       equ 13               ; canto inferior direito da moldura
+G_HORIZ          equ 14               ; traco horizontal da moldura
+G_VERT           equ 15               ; traco vertical da moldura
+NUM_GLYPHS       equ 42               ; total de glifos na fonte
+NUM_OPCOES       equ 2                ; total de opcoes do menu
+
+; Barra de status
+ALTURA_CORACAO   equ 12               ; altura das variacoes de coracoes
+X_CORACAO        equ 5                ; X fixo do desenho de coracoes
+Y_CORACAO        equ 5                ; Y fixo do desenho de coracoes
+LARGURA_RELOGIO  equ 7                ; largura do icone de relogio
+ALTURA_RELOGIO   equ 8                ; altura do icone de relogio
+X_SCORE           equ 135             ; X do score centralizado
+Y_SCORE           equ 8               ; Y do score na barra de status
+
+; Terreno e movimento horizontal
+ALTURA_SUPERFICIE equ 7               ; altura da faixa de superficie
+Y_SUPERFICIE      equ ALT_TELA - ALTURA_SUPERFICIE  ; Y do topo da superficie
+ALTURA_REGIAO_TERRENO     equ 95              ; distancia do topo do relevo distante ate o fim da tela
+LINHAS_BITMAP_TERRENO      equ 42              ; linhas do bitmap de terreno
+ALTURA_TERRENO    equ 60              ; altura do terreno perto
+Y_LONGE           equ ALT_TELA - ALTURA_REGIAO_TERRENO                      ; Y do terreno longe
+Y_PERTO           equ ALT_TELA - ALTURA_TERRENO     ; Y do terreno perto
+PREENCHE_LONGE    equ ALT_TELA - (Y_LONGE + LINHAS_BITMAP_TERRENO)
+                  ; linhas de preenchimento abaixo do terreno longe
+PREENCHE_PERTO    equ ALT_TELA - (Y_PERTO + LINHAS_BITMAP_TERRENO)
+                  ; linhas de preenchimento abaixo do terreno perto
+VEL_CHAO          equ 1               ; pixels de rolagem por quadro
+MODO_REAPARECE    equ 0               ; sprite reaparece no lado oposto
+MODO_SOME         equ 1               ; sprite sai e nao volta
+
+; Jipe
+LARGURA_JIPE     equ 20               ; largura do jipe
+ALTURA_JIPE      equ 10               ; altura do jipe
+X_MAX_JIPE       equ LARG_TELA / 2 - LARGURA_JIPE  ; limite X direito do jipe (140)
+JIPE_Y            equ Y_SUPERFICIE - ALTURA_JIPE  ; Y do jipe no chao
+SALTO_ALTURA     equ 15               ; altura maxima do salto (px)
+SALTO_VEL        equ 3                ; passo vertical do salto (px/quadro)
+SALTO_TOPO_PX    equ 5                ; rolagem acumulada que encerra o topo do salto
+RODA_FIM_JIPE    equ 17               ; ultima coluna do sprite com roda
+PERIODO_TELA     equ LARG_TELA + LARGURA_JIPE
+                 ; percurso de reaparecimento (tela + maior sprite)
+
+; Naves e grupos
+LARGURA_NAVE     equ 14               ; largura de cada nave
+ALTURA_NAVE      equ 14               ; altura de cada nave
+TAM_NAVE         equ LARGURA_NAVE * ALTURA_NAVE  ; bytes por nave (196)
+NUM_ALIENS        equ 3
+ALIEN_Y_MIN       equ 15             ; faixa Y de spawn
+ALIEN_Y_MAX       equ 100
+ALIEN_DIST_MIN    equ 30             ; espacamento minimo vertical entre naves do grupo
+VEL_ALIEN         equ 1              ; px/quadro (esquerda)
+SCORE_ALIEN       equ 100
+ALIEN_SPAWN_DELAY equ 30             ; quadros entre grupos (~0,5s)
+
+; Rochas
+LARGURA_ROCHA     equ 12              ; largura da rocha
+ALTURA_ROCHA      equ 10              ; altura da rocha
+TAM_ROCHA         equ LARGURA_ROCHA * ALTURA_ROCHA  ; bytes por rocha (120)
+Y_ROCHA           equ Y_SUPERFICIE - ALTURA_ROCHA   ; Y de desenho da rocha
+NUM_ROCHAS        equ 3               ; quantidade de slots de rocha
+ROCHA_LIVRE       equ 8000H           ; marca de slot vazio
+DIST_MIN_ROCHA    equ 110             ; distancia minima entre rochas (px)
+DIST_VAR_ROCHA    equ 100             ; variacao aleatoria adicional (0..99)
+DIST_ENTRE_OBST   equ 100             ; espaco livre exigido na borda direita
+MARGEM_ROCHA      equ 3               ; margem da rocha na colisao
+ALT_LIVRE_ROCHA   equ 6               ; altura minima do jipe para passar
+SCORE_ROCHA       equ 50              ; pontos por rocha ultrapassada no ar
+FLAG_ATINGIDA     equ 20H             ; bit: rocha 4 ja levou 1o disparo
+MARGEM_JIPE_ROCHA equ 4               ; margem do jipe na colisao com rocha
+
+; Crateras e flags comuns aos obstaculos
+; Os bits de tipo selecionam a arte; as flags pertencem ao slot.
+LARGURA_CRATERA   equ 14              ; largura da cratera
+ALTURA_CRATERA    equ 7               ; altura da cratera
+TAM_CRATERA       equ LARGURA_CRATERA * ALTURA_CRATERA  ; bytes por cratera (98)
+NUM_CRATERAS      equ 3               ; quantidade de slots de cratera
+CRATERA_LIVRE     equ 8000H           ; marca de slot vazio
+DIST_MIN_CRATERA  equ 150             ; distancia minima entre crateras (px)
+DIST_VAR_CRATERA  equ 100             ; variacao aleatoria adicional (0..99)
+SCORE_CRATERA     equ 50              ; pontos por cratera saltada
+MASCARA_TIPO      equ 03H             ; mascara dos bits de variacao
+FLAG_SOBREVOADA   equ 04H             ; bit: jipe passou por cima no ar
+FLAG_PONTUADA     equ 10H             ; bit: pontos ja contabilizados
+
+; Tiros do jipe e das naves
+COR_TIRO_CIMA    equ AMARELO          ; cor do tiro superior
+COR_TIRO_FRENTE  equ VERMELHO         ; cor do tiro frontal
+LARG_TIRO_CIMA   equ 2                ; largura do tiro superior
+ALT_TIRO_CIMA    equ 4                ; altura do tiro superior
+LARG_TIRO_FRENTE equ 4                ; largura do tiro frontal
+ALT_TIRO_FRENTE  equ 2                ; altura do tiro frontal
+VEL_TIRO_CIMA    equ 4                ; velocidade do tiro superior (px/quadro)
+VEL_TIRO_FRENTE  equ 5                ; velocidade do tiro frontal (px/quadro)
+Y_LIMITE_TIRO    equ 15               ; Y minimo do tiro superior
+ALCANCE_TIRO     equ 50               ; alcance do tiro frontal (px)
+CANHAO_CIMA_X    equ 12               ; X do canhao superior no sprite do jipe
+CANHAO_FRENTE_Y  equ 4                ; Y do canhao frontal no sprite do jipe
+COR_TIRO_ALIEN    equ 0FH            ; branco
+LARG_TIRO_ALIEN   equ 2
+ALT_TIRO_ALIEN    equ 4
+VEL_TIRO_ALIEN    equ 2              ; px/quadro (caindo)
+
+; Offsets do registro de tiro (words + buffer de fundo)
+; Os offsets sao em bytes, relativos ao primeiro byte de cada registro.
+T_ATIVO          equ 0                ; 0 = livre, 1 = em voo
+T_X              equ 2                ; X atual
+T_Y              equ 4                ; Y atual
+T_LIM            equ 6                ; limite: X max (frontal) ou Y min (superior)
+T_DX             equ 8                ; deslocamento X por quadro
+T_DY             equ 10               ; deslocamento Y por quadro
+T_LARG           equ 12               ; largura do tiro
+T_ALT            equ 14               ; altura do tiro
+T_COR            equ 16               ; cor do tiro
+T_FUNDO          equ 18               ; buffer de 8 bytes com o fundo salvo
+TAM_TIRO equ T_FUNDO + 8            ; = 26 bytes por registro de tiro (reutiliza o layout)
+
+; ============================================================
+; TABELAS E TEXTOS FIXOS
+; ============================================================
+
+; Paletas de texto (DESENHA_CARACTERE usa a cor em [DI+1])
+COR_TITULO       db COR_FUNDO, VERDE_CLARO     ; titulo do menu
+COR_GAMEOVER     db COR_FUNDO, VERMELHO        ; titulo de game over
+COR_BOTAO        db COR_FUNDO, BRANCO          ; botao nao selecionado
+COR_SELEC        db COR_FUNDO, VERMELHO_CLARO  ; botao selecionado
+COR_SCORE        db COR_FUNDO, BRANCO          ; texto do score no game over
+COR_TEMPO        db COR_FUNDO, VERMELHO_CLARO  ; numeros do tempo
+
+; Paletas de sprite (indice 0 indica pixel transparente)
+COR_CORACAO      db COR_FUNDO, VERMELHO_CLARO  ; coracoes de vida
+COR_RELOGIO      db COR_FUNDO, AMARELO         ; icone de relogio
+NAVE_PALETA          db COR_FUNDO, AZUL_CLARO, AMARELO, VERMELHO
+JIPE_PALETA          db COR_FUNDO, VERMELHO_CLARO, AZUL_CLARO, AZUL, VERMELHO
+TERRENO_LONGE_PALETA db COR_FUNDO, AZUL, AZUL_CLARO
+TERRENO_PERTO_PALETA db COR_FUNDO, VERDE_CLARO, VERDE
+CRATERA_PALETA       db COR_FUNDO, AMARELO, MARROM, VERDE_CLARO
+                     ; '1'=amarelo, '2'=marrom, '3'=verde (buraco)
+ROCHA_PALETA         db COR_FUNDO, MARROM, VERMELHO
+
+; Textos, botoes e variantes de coracao
+; Cada indice em CORACOES usa a largura do mesmo indice em CORACAO_LARG.
+TXT_GAMEOVER     db 'Pressione qualquer tecla para continuar...', 0
+TXT_JOGAR        db "Jogar", 0        ; rotulo do botao Jogar
+TXT_SAIR         db "Sair", 0         ; rotulo do botao Sair
+TXT_SCORE         db "SCORE ", 0      ; prefixo do score na barra
+BOTOES_TXT       dw offset TXT_JOGAR, offset TXT_SAIR  ; textos dos botoes
+BOTOES_Y         dw 130, 160                            ; Y de Jogar, Y de Sair
+CAIXA_GLIFOS     db G_CANTO_SE, G_HORIZ, G_CANTO_SD
+                 db G_VERT, G_ESPACO, G_VERT
+                 db G_CANTO_IE, G_HORIZ, G_CANTO_ID
+                 ; glifos da moldura do botao (3 linhas x 3 colunas)
+CORACOES         dw offset CORACAO1_SPRITE, offset CORACAO2_SPRITE, offset CORACAO3_SPRITE
+                 ; ponteiros para sprites de 1, 2 e 3 coracoes
+CORACAO_LARG     dw 10, 14, 18        ; largura de cada variacao de coracoes
+
+; ============================================================
+; ESTADO DE EXECUCAO
+; ============================================================
+
+; Coordenadas e cor usadas pelas rotinas de desenho
+ASCII_X          dw 0                 ; X corrente de desenho de texto
+ASCII_Y          dw 0                 ; Y corrente de desenho de texto
+FUNDO_COR        db COR_FUNDO         ; cor corrente usada por APAGAR_SPRITE
+
+; Menu inicial
+BTN_X            dw 0                 ; X corrente do botao em construcao
+BTN_Y            dw 0                 ; Y corrente do botao em construcao
+BTN_TXT          dw 0                 ; ponteiro para o texto do botao
+SPRITES_MENU_X   dw 140, 170, 200, 110
+                 ; X de nave1, nave2, nave3 e jipe no menu
+OPCAO_SEL        db 0                 ; indice da opcao selecionada no menu
+
+; Jipe e teclado
+JIPE_X            dw 10               ; X atual do jipe
+JIPE_VEL          dw 1                ; deslocamento X por quadro
+JIPE_ALT         dw 0                 ; altura atual do jipe acima do chao
+SALTO_FASE       db 0                 ; fase do salto (0 chao, 1 sobe, 2 topo, 3 desce)
+SALTO_PX         db 0                 ; rolagem acumulada no topo, independente de JIPE_X
+TECLA_ESQ         db 0                ; estado da seta esquerda (0/1)
+TECLA_DIR         db 0                ; estado da seta direita (0/1)
+OLD_INT09_OFF     dw 0                ; offset do handler anterior da INT 09h
+OLD_INT09_SEG     dw 0                ; segmento do handler anterior
+
+; Vidas, score e tempo
+VIDAS            db 3                 ; vidas restantes (1 a 3)
+SCORE_TEXTO     db "0000", 0        ; pontuacao como string de 4 digitos
+SEGUNDOS_RESTANTES     dw 60               ; segundos restantes
+TICKS_REFERENCIA   dw 0                ; ticks do BIOS como referencia
+TEMPO_TEXTO       db "60", 0          ; tempo como string de 2 digitos
+
+; Rochas, crateras e sorteio
+ROCHAS_X          dw NUM_ROCHAS dup(ROCHA_LIVRE)  ; X de cada rocha
+ROCHAS_TIPO       db NUM_ROCHAS dup(0)            ; tipo e flags no mesmo byte de cada slot
+ROCHA_PROX        dw 0                            ; px ate criar a proxima rocha
+PASSO_CHAO        dw VEL_CHAO                     ; passo lido por ROLA_ROCHAS; inicia em VEL_CHAO
+CRATERAS_X        dw NUM_CRATERAS dup(CRATERA_LIVRE)  ; X de cada cratera
+CRATERAS_TIPO     db NUM_CRATERAS dup(0)              ; tipo e flags no mesmo byte de cada slot
+CRATERA_PROX      dw 0                                ; px ate criar a proxima
+SEMENTE           dw 1                                ; semente do gerador aleatorio
+
+; Grupo de naves
+ALIENS_X      dw NUM_ALIENS dup(0)   ; X atual de cada alien
+ALIENS_Y      dw NUM_ALIENS dup(0)   ; Y fixo de cada alien
+ALIENS_ATIVO  dw NUM_ALIENS dup(0)   ; 0 = slot livre
+ALIENS_TIPO   db NUM_ALIENS dup(0)   ; 0..2: qual variacao de NAVES_SPRITE
+ALIEN_ATRASO  dw 0                   ; quadros ate criar o proximo grupo
+ALIEN_HIT_FLAG db 0                  ; 1 = algum tiro alien acertou o jipe
+
+; Registros de tiro
+; TIROS_ALIENS tem NUM_ALIENS registros contiguos de TAM_TIRO bytes.
+; O trecho T_FUNDO guarda os pixels cobertos por cada projetil.
+TIRO_CIMA        dw 0, 0, 0, Y_LIMITE_TIRO, 0, -VEL_TIRO_CIMA, LARG_TIRO_CIMA, ALT_TIRO_CIMA, COR_TIRO_CIMA
+                 db 8 dup(0)
+TIRO_FRENTE      dw 0, 0, 0, 0, VEL_TIRO_FRENTE, 0, LARG_TIRO_FRENTE, ALT_TIRO_FRENTE, COR_TIRO_FRENTE
+                 db 8 dup(0)
+TIROS_ALIENS  dw 0,0,0,0,0, VEL_TIRO_ALIEN, LARG_TIRO_ALIEN, ALT_TIRO_ALIEN, COR_TIRO_ALIEN
+              db 8 dup(0)
+              dw 0,0,0,0,0, VEL_TIRO_ALIEN, LARG_TIRO_ALIEN, ALT_TIRO_ALIEN, COR_TIRO_ALIEN
+              db 8 dup(0)
+              dw 0,0,0,0,0, VEL_TIRO_ALIEN, LARG_TIRO_ALIEN, ALT_TIRO_ALIEN, COR_TIRO_ALIEN
+              db 8 dup(0)
+
+; ============================================================
+; ARTE E FONTE BITMAP
+; ============================================================
+
+; =====================
+; BITMAPS / ASCII ARTS
+; =====================
+
+TITULO_JOGO db " __  __                     _____      _             _ ", 13, 10
+            db "|  \/  |                   |  __ \    | |           | |", 13, 10
+            db "| \  / | ___   ___  _ __   | |__) |_ _| |_ _ __ ___ | |", 13, 10
+            db "| |\/| |/ _ \ / _ \| '_ \  |  ___/ _` | __| '__/ _ \| |", 13, 10
+            db "| |  | | (_) | (_) | | | | | |  | (_| | |_| | | (_) | |", 13, 10
+            db "|_|  |_|\___/ \___/|_| |_| |_|   \__,_|\__|_|  \___/|_|", 13, 10
+            db 0
+            
+TITULO_GAMEOVER db "   _____          __  __ ______ ", 13, 10
+                db "  / ____|   /\   |  \/  |  ____|", 13, 10
+                db " | |  __   /  \  | \  / | |__   ", 13, 10
+                db " | | |_ | / /\ \ | |\/| |  __|  ", 13, 10
+                db " | |__| |/ ____ \| |  | | |____ ", 13, 10
+                db "  \_____/_/    \_\_|  |_|______|", 13, 10
+                db "   ____ _      _ ______ _____   ", 13, 10
+                db "  / __ \ \    / /  ____|  __ \  ", 13, 10
+                db " | |  | \ \  / /| |__  | |__) | ", 13, 10
+                db " | |  | |\ \/ / |  __| |  _  /  ", 13, 10
+                db " | |__| | \  /  | |____| | \ \  ", 13, 10
+                db "  \____/   \/   |______|_|  \_\ ", 13, 10
+                db 0     
+
+                ;1coracao
+CORACAO1_SPRITE db"0011001100"
+                db"0011001100"
+                db"1111111111"
+                db"1111111111"
+                db"1111111111"
+                db"1111111111"
+                db"0011111100"
+                db"0011111100"
+                db"0011111100"
+                db"0011111100"
+                db"0000110000"
+                db"0000110000"
+                ;2coracoes
+CORACAO2_SPRITE db "00110011001100"
+                db "00110011001100"
+                db "11001111111111"
+                db "11001111111111"
+                db "11001111111111"
+                db "11001111111111"
+                db "00110011111100"
+                db "00110011111100"
+                db "00110011111100"
+                db "00110011111100"
+                db "00001100110000"
+                db "00001100110000"
+                ;3coracoes
+CORACAO3_SPRITE db "001100110011001100"
+                db "001100110011001100"
+                db "110011001111111111"
+                db "110011001111111111"
+                db "110011001111111111"
+                db "110011001111111111"
+                db "001100110011111100"
+                db "001100110011111100"
+                db "001100110011111100"
+                db "001100110011111100"
+                db "000011001100110000"
+                db "000011001100110000"
+
+RELOGIO_SPRITE db "0011100"
+               db "0110110"
+               db "1110111"
+               db "1110111"
+               db "1110001"
+               db "1111111"
+               db "0111110"
+               db "0011100"
+               
+             ;nave1
+NAVES_SPRITE db "00000000000000"
+             db "00000000000000"
+             db "00000000000000"
+             db "00000011000000"
+             db "00001111110000"
+             db "00011311311000"
+             db "00011111111000"
+             db "00222111122200"
+             db "02222222222220"
+             db "02222000022220"
+             db "00033000003300"
+             db "00000000000000"
+             db "00000000000000"
+             db "00000000000000"
+             ;nave2
+             db "00000011000000"
+             db "00000111100000"
+             db "00001111110000"
+             db "00001111110000"
+             db "00001113110000"
+             db "00000111100000"
+             db "00003011030000"
+             db "00110000001100"
+             db "01111000011110"
+             db "11311100111111"
+             db "11111133131111"
+             db "11111100111111"
+             db "01111000011110"
+             db "00110000001100"
+             ;nave3
+             db "00000000000000"
+             db "00000000000000"
+             db "00000000000000"
+             db "00000222200000"
+             db "00022222222000"
+             db "02222222222220"
+             db "22222222222222"
+             db "22333222222222"
+             db "02222332222220"
+             db "00002222220000"
+             db "00000000000000"
+             db "00000000000000"
+             db "00000000000000"
+             db "00000000000000"
+
+JIPE_SPRITE db "00000000000111110000"
+            db "00000030001112222000"
+            db "00111041111222222100"
+            db "01111111111111111111"
+            db "01111111111111144433"
+            db "01111111111111111100"
+            db "03211132111111132100"
+            db "23330233300000233300"
+            db "33320333200000333200"
+            db "02300023000000023000"
+            
+                ;cratera1
+CRATERAS_SPRITE db "22333333333322"
+                db "22333333333321"
+                db "12223333333221"
+                db "11122333333211"
+                db "11122333332111"
+                db "11211233321111"
+                db "11111122211111"
+                ;cratera2
+                db "23333333333222"
+                db "12333333333211"
+                db "11223333332211"
+                db "11112233322111"
+                db "11111223321111"
+                db "11111212221111"
+                db "11111111211111"
+                ;cratera3
+                db "22233333333222"
+                db "11233333332111"
+                db "11233333322111"
+                db "11233333221111"
+                db "11122333211111"
+                db "11112332111111"
+                db "11121222111111"
+                
+              ;rocha1
+ROCHAS_SPRITE db "000000000000"
+              db "000000000000"
+              db "000000000000"
+              db "000000000000"
+              db "000000000000"
+              db "000000000000"
+              db "000120000000"
+              db "001220000000"
+              db "012121000000"
+              db "111111200000"
+              ;rocha2
+              db "000000000000"
+              db "000000000000"
+              db "000000000000"
+              db "000120000000"
+              db "001111020000"
+              db "001211220000"
+              db "011112222000"
+              db "011112112000"
+              db "211211122200"
+              db "112111221220"
+              ;rocha3
+              db "000002222000"
+              db "000011122000"
+              db "000021112200"
+              db "000021112220"
+              db "001211112200"
+              db "001111122200"
+              db "011121112000"
+              db "011211112200"
+              db "211112122220"
+              db "221111112222"
+              ;rocha4
+              db "000022200000"
+              db "000112220000"
+              db "001121220000"
+              db "001211220000"
+              db "011111222200"
+              db "011112111220"
+              db "011111111220"
+              db "011112112122"
+              db "111121111111"
+              db "111111111111"
+
+TERRENO_LONGE_SPRITE db "0000000000000000000002200000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000011100"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000001112000000000000000"
+    db "0000000000000000000002220000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000111110"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000011112222220000000000"
+    db "0000000000000000000002222000010000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000111110"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000011111222220000000000"
+    db "0000000000000000000022222001111110000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000001211111"
+    db "2100010000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000121112222110000000000"
+    db "0000000000000000000022221011111110000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000001221112"
+    db "2220010000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000111111211110000000000"
+    db "0000000000000000001222221111112111000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000001221111"
+    db "2221110000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000012211111111120000000000"
+    db "0000000000000000001222211122111111000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000001211111"
+    db "2222110000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000022111111112220000000000"
+    db "0000000000000001122222211122211111200000"
+    db "0000000000000000000110001100000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0011100000000000000000000000000011211112"
+    db "2221111100000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000110000222211111122221110000000"
+    db "0000000000000002222222221111112222200000"
+    db "0000000000000000011110222210000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0011110000000000000000000000000022211111"
+    db "2221111100000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000111001222211111112222220000000"
+    db "0000000000000012222222221111112222200000"
+    db "0000000000000000011112221222000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0011110220000000000000000000000122211111"
+    db "2221111100000000000000000000000000000000"
+    db "0000000000000000111100000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000111111222211111111122221000000"
+    db "0000000000002222222222221111111222200000"
+    db "0000000000000000111122222222000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0122111222000000000000000000000222111111"
+    db "1221111100000000000000000000000000000000"
+    db "0000000000000000111100000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000211111122221111122222222000000"
+    db "0000000012002222222222221111111222221000"
+    db "0000000000000000111122222222200000000000"
+    db "0000000111000000000000000000000000000000"
+    db "0111111222210000000000000000000222211112"
+    db "1111111100000000000000000000000000000000"
+    db "0000000000000000111101110000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000211111111211111122222222000000"
+    db "0000000222222221122112211111111122221000"
+    db "0000000000000001111112222222200000000000"
+    db "0000000111100000000000000000000000000000"
+    db "2221112222210000000000000000000222111112"
+    db "2111121100000000000000000000000000000000"
+    db "0000000000000000111111110111000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000211111122211111112222222000000"
+    db "0000022222222221111111221111111122221100"
+    db "0000000001000011111112222222200000000000"
+    db "0000001111222000000000000000000000000000"
+    db "2111111222222002100000000000000222111111"
+    db "2111221101000000000000000000000000000000"
+    db "0000000000000001111121111211000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000222111111211111122222222000000"
+    db "0012222222222222221111112111111112222220"
+    db "0000000111111112211122222222220000000000"
+    db "0000011111222000000000000000000001222222"
+    db "2221111221222222100000000000000222211111"
+    db "2111221101111000000000000000000000000000"
+    db "0000000000000001111121111211000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000110221111111111111222222222200000"
+    db "0222222222222111122111111111111111112220"
+    db "0000001111111111111112222112220000000000"
+    db "0000111112222000000000000000000001221222"
+    db "2111111111112222100000000000002222211111"
+    db "1111211111111000000000000000000000000000"
+    db "0000000000000001111112211111000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000111211112111111112222222222221000"
+    db "1222112222211111111111111111111111122222"
+    db "1111111121111111122222222222222210000000"
+    db "0001112222222202220000000000000001211122"
+    db "1111111111112222210000000000002221111112"
+    db "1111211111111100000000000000000111000000"
+    db "0000000000000111111112111111000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000111211112111111112222222222222221"
+    db "1111122212111111111111111111111111222211"
+    db "1111122222111111111222222222222220000000"
+    db "0011112222222202222000000000000011111111"
+    db "2111111111111111222200000001112221111112"
+    db "1111111111111111000000000000000111101110"
+    db "0000000000001111111111111111000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000011111111111221111111222112221111221"
+    db "1111222211111111111111111111111122221122"
+    db "1122222222211111111222222222222222000001"
+    db "1111111122222212222000000000001111111111"
+    db "1111111111111111222210000111112111111111"
+    db "1111111122111111000000000000011111111220"
+    db "0000000000001111111111111111000000000000"
+    db "0000000001111000000000000000000000000000"
+    db "0000111222111111221111122211122111122211"
+    db "1122111111111111111111111111111111112211"
+    db "1122212222111111222222222222212222200001"
+    db "1111111222112222222100000000001111111111"
+    db "1122111111111112221210000111112111111111"
+    db "1111112222222111000000000000011111112210"
+    db "0000000000011111111111111112200000000000"
+    db "0000000001111120000000000000000000000000"
+    db "0000111222111111111111111111111111111111"
+    db "1221111111111111111111111111112111111111"
+    db "1122112221111111111221112222111222200001"
+    db "1111112221122211222121000000011111121111"
+    db "1122111111111122122110001111111221111111"
+    db "1111122222222111000000000002221111111110"
+    db "0000000000011111221111111122200000000000"
+    db "0000000001111122220000000000000000000000"
+    db "0000111221111111111111111111111111111111"
+    db "1111111111111111122211111111111111111111"
+    db "1111111112111111222111111211111111221111"
+    db "1111211111111111221121000000011111222222"
+    db "2221111111111121111110001111111111111111"
+    db "1111122221212211111000000002211111111112"
+    db "0000000000111111111221111211100000000000"
+    db "0001222211112212222200000000000000000000"
+    db "0222111221111111111112211111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111112111111111111111111121111"
+    db "1111111111111112221122200022111111222222"
+    db "2221111111112221111110111111111122221111"
+    db "1111122221111111111000000222211111111222"
+    db "0000000000111111111211111111110000000000"
+    db "0001222211122112222200000000000000000001"
+    db "1222111111111111122111222222111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111221"
+    db "1111111111111111111112200211111122221222"
+    db "1111111111111111111111111111111111112211"
+    db "1111112211111111111110012112211111122222"
+    db "0000000222111111111221111111112220000000"
+    db "0222211111111111122221000000000000001222"
+    db "1222121111111111111111111222221111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111112"
+    db "1111111111112211111112220211111222211112"
+    db "1111111111111111111111111111111111111221"
+    db "1111112211111111111112222111121111211222"
+    db "2222000222111112111111111111112220000000"
+    db "0222211111211111122221000000000000012222"
+    db "1221121111111111111111111122121111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111112221122111111111222211112211211112"
+    db "2111111111111111111111111111111111111111"
+    db "1111111221111111111111221111111111111112"
+    db "2222201222111112221111111111122111100000"
+    db "2222122211222111221121000000121111122112"
+    db "2221122211111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111122111111111222111111111111111"
+    db "1221111111111111111111111111111111111111"
+    db "1111111112111111111111111111111111121112"
+    db "2222212222111112111111111112222111111100"
+    db "2221121111111111221122200002221111111111"
+    db "2221111221111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111112111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111211122"
+    db "2222222222111222211111111121111111111111"
+    db "1211112111111112111112111122212111111111"
+    db "1222111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111211111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111112221"
+    db "2122221221112222111111111111111111111112"
+    db "1111111111111111111111111211111111111111"
+    db "1111211111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111121111"
+    db "2111221111112222111111111111111111111221"
+    db "1111111111111111111111111211111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1122211111122222111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1221111111122222111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111222222222211111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111222222221111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111222222222111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111222222222211111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111222222211111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111211111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111211111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111112222111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111122222211111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111221111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+
+TERRENO_PERTO_SPRITE db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000022000"
+    db "0000000000222000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000111000"
+    db "0000000222222220000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000001111111111"
+    db "0002222000111110200000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000001111111111111"
+    db "1102222011111111222200000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000011111111111111022"
+    db "0000011111111112222222000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000002200000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000011111111111111122011"
+    db "1111111111111112222222222000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000222222200000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000001111111111111111102211111"
+    db "1111111110000022222222222220000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000011112211112222000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000111111111111111112201111111"
+    db "1111111111111111122222222222220000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000011111111111111122000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000001111111111111111111110001111111111"
+    db "1111111111111110022222222222222220000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000011111111111111122222000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000111111111111111111111111111111111111"
+    db "1111111111111022222222222222222222220000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0001112211111111112222122200000000000000"
+    db "0000000000000000000000000000000000001111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111002222222222222222222222222222"
+    db "0000000000000000000000000000000000222200"
+    db "0000222000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0111111111111111111111111222200000000000"
+    db "0000000000000000000000000000000001111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111022222222222222222211112222222222"
+    db "2222200000000000000000000000000011112222"
+    db "2222012222000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "1112111111111111111111111222220000000000"
+    db "0000000000000000000000000111111111110000"
+    db "1111111111111111111111111111111111111111"
+    db "1100002222222222222220001111111022222222"
+    db "2222222000000000000000000000001111111100"
+    db "2200111000220000000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000000011"
+    db "1121111111111111111111122222222200000000"
+    db "0000000000000000000011111111112222111111"
+    db "1111111111111111111111111111111111111111"
+    db "2222222222222222220111111111112222222222"
+    db "2222222222220000000000000001111111111110"
+    db "2111111111122220000000000000000000000000"
+    db "0000000000000000000000000000000000000000"
+    db "0000000000000000000000000000000000011111"
+    db "2211111111111111111122111222222222200000"
+    db "0000000000111111111111000022201111111111"
+    db "1111111111111111111111111111111111100000"
+    db "0001111100011000111111111100222200020002"
+    db "2220001100222220000000000111111111111111"
+    db "1111111111102222200000000000000000000000"
+    db "0000000000000000000000000000000011100000"
+    db "2220000000000000000000000000000001111211"
+    db "1111111111111111111111111112222222222200"
+    db "1111111111111111102222221111111111111111"
+    db "1111111111111111220111111111111111111111"
+    db "1111111111111111111111102222221111111111"
+    db "2111111222222222222211111111111111111110"
+    db "2211111110222222222220000000000000000000"
+    db "0000000000000000000000000000001111111122"
+    db "2122220000000000000000000000001111111111"
+    db "1111111111111111111111122222222222111111"
+    db "1111111110000111111111111111111111111111"
+    db "1111111111100000111111111111111111111111"
+    db "1111111111111111111110001111111111111111"
+    db "1111111100022222011111111111111111111000"
+    db "1111111222200011102222200000000000000000"
+    db "0000000000000000000000000000011111111111"
+    db "1102222200000000000000000000011111111111"
+    db "1111111111111111111111222111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111102220111111111111111111111111111"
+    db "1111022220111111122222222222000000000000"
+    db "0000000000000000000000000011111111111111"
+    db "1222222222220000000000000111111111111111"
+    db "1111111111112222211111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1110002200111111111111111110000011111111"
+    db "1100000111111002222222222222222000000000"
+    db "0000000000000000000000001111111111111110"
+    db "2220020110000220000000011111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "2220111111111111111111111111111111111111"
+    db "1111111111112222222222222222222222000000"
+    db "0000000000000000000000111111111111022222"
+    db "2211111111112222201111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111000"
+    db "1111111111002220011111100011111111111111"
+    db "1111111110022222222222222222222222220000"
+    db "0000000000000000001111111111111111111000"
+    db "1111111000001111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111122222111111111111111111111111"
+    db "1111111222222222222222222222222222222222"
+    db "2200000000111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111000001110000111111111111111111"
+    db "1100022222222220022201100020002202222222"
+    db "2222222000111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1222222222222011111111111111111111112222"
+    db "2222222222221111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111110002"
+    db "0000111100011111111111111111111111111110"
+    db "0022222022222200000011111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111110221111"
+    db "1111111111111111111111111111111111111110"
+    db "2222011111112201111022111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111110000200"
+    db "0011111111111111111111000111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111220111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111110001111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+    db "1111111111111111111111111111111111111111"
+
+; ============================================================
+; FONTE
+; ============================================================
+
+; FONTE_CHARS mapeia ASCII -> indice do glifo para ASCII_PARA_INDICE.
+; Indices 10..15 sao glifos de moldura e nao tem ASCII correspondente (0).
+FONTE_CHARS db ' ', 27H, '`', '(', ')', '/', '\', '_', '|', ','
+            db 0, 0, 0, 0, 0, 0
+            db 'J', 'O', 'G', 'A', 'R', 'S', 'I', 'P', 'E', 'N', 'Q', 'U', 'L', 'T', 'C', '.'
+            db '0', '1', '2', '3', '4', '5', '6', '7', '8', '9'
+            
+; 8 bytes por glifo (uma linha por byte)
+FONTE_GLYPHS label byte
+    ;simbolos
+    db 00H, 00H, 00H, 00H, 00H, 00H, 00H, 00H   ; 0  espaco
+    db 04H, 04H, 00H, 00H, 00H, 00H, 00H, 00H   ; 1  '
+    db 08H, 04H, 00H, 00H, 00H, 00H, 00H, 00H   ; 2  `
+    db 02H, 04H, 08H, 08H, 08H, 08H, 04H, 02H   ; 3  (
+    db 08H, 04H, 02H, 02H, 02H, 02H, 04H, 08H   ; 4  )
+    db 01H, 02H, 02H, 04H, 04H, 08H, 08H, 10H   ; 5  /
+    db 10H, 08H, 08H, 04H, 04H, 02H, 02H, 01H   ; 6  \
+    db 00H, 00H, 00H, 00H, 00H, 00H, 00H, 1FH   ; 7  _
+    db 04H, 04H, 04H, 04H, 04H, 04H, 04H, 04H   ; 8  |
+    db 00H, 00H, 00H, 00H, 00H, 04H, 04H, 08H   ; 9  ,
+    db 00H, 00H, 00H, 07H, 04H, 04H, 04H, 04H   ; 10 canto sup. esq.
+    db 00H, 00H, 00H, 1CH, 04H, 04H, 04H, 04H   ; 11 canto sup. dir.
+    db 04H, 04H, 04H, 07H, 00H, 00H, 00H, 00H   ; 12 canto inf. esq.
+    db 04H, 04H, 04H, 1CH, 00H, 00H, 00H, 00H   ; 13 canto inf. dir.
+    db 00H, 00H, 00H, 1FH, 00H, 00H, 00H, 00H   ; 14 horizontal
+    db 04H, 04H, 04H, 04H, 04H, 04H, 04H, 04H   ; 15 vertical
+    ;texto
+    db 02H, 02H, 02H, 02H, 12H, 12H, 0CH, 00H   ; 16 J
+    db 0CH, 12H, 12H, 12H, 12H, 12H, 0CH, 00H   ; 17 O
+    db 0CH, 12H, 10H, 16H, 12H, 12H, 0CH, 00H   ; 18 G
+    db 0CH, 12H, 12H, 1EH, 12H, 12H, 12H, 00H   ; 19 A
+    db 1CH, 12H, 12H, 1CH, 14H, 12H, 12H, 00H   ; 20 R
+    db 0EH, 10H, 10H, 0CH, 02H, 02H, 1CH, 00H   ; 21 S
+    db 0EH, 04H, 04H, 04H, 04H, 04H, 0EH, 00H   ; 22 I
+    db 1CH, 12H, 12H, 1CH, 10H, 10H, 10H, 00H   ; 23 P
+    db 1EH, 10H, 10H, 1CH, 10H, 10H, 1EH, 00H   ; 24 E
+    db 12H, 1AH, 1AH, 16H, 16H, 12H, 12H, 00H   ; 25 N
+    db 0CH, 12H, 12H, 12H, 12H, 14H, 0AH, 00H   ; 26 Q
+    db 12H, 12H, 12H, 12H, 12H, 12H, 0CH, 00H   ; 27 U
+    db 10H, 10H, 10H, 10H, 10H, 10H, 1EH, 00H   ; 28 L
+    db 1EH, 0CH, 0CH, 0CH, 0CH, 0CH, 0CH, 00H   ; 29 T
+    db 0CH, 12H, 10H, 10H, 10H, 12H, 0CH, 00H   ; 30 C
+    db 00H, 00H, 00H, 00H, 00H, 00H, 0CH, 00H   ; 31 .
+    ;numeros
+    db 0CH, 12H, 12H, 12H, 12H, 12H, 0CH, 00H   ; 32 0
+    db 04H, 0CH, 04H, 04H, 04H, 04H, 0EH, 00H   ; 33 1
+    db 0CH, 12H, 02H, 04H, 08H, 10H, 1EH, 00H   ; 34 2
+    db 1CH, 02H, 02H, 0CH, 02H, 02H, 1CH, 00H   ; 35 3
+    db 02H, 06H, 0AH, 12H, 1EH, 02H, 02H, 00H   ; 36 4
+    db 1EH, 10H, 1CH, 02H, 02H, 12H, 0CH, 00H   ; 37 5
+    db 0CH, 10H, 1CH, 12H, 12H, 12H, 0CH, 00H   ; 38 6
+    db 1EH, 02H, 02H, 04H, 08H, 08H, 08H, 00H   ; 39 7
+    db 0CH, 12H, 12H, 0CH, 12H, 12H, 0CH, 00H   ; 40 8
+    db 0CH, 12H, 12H, 0EH, 02H, 02H, 0CH, 00H   ; 41 9
+
+.code
+
+; ---------------------------------------------------------------------
+; Funcao: MODO_VIDEO - ativa o modo grafico 13h (320x200, 256 cores).
+; Entrada: Nenhuma.
+; Saida:   Modo grafico 13h selecionado.
+; ---------------------------------------------------------------------
 MODO_VIDEO proc
-    mov AX, 13H
+    mov AX, 0013H
     int 10H
     ret
-endp
+MODO_VIDEO endp
 
-; Entrada:
-;  CX = coordenada X
-;  DX = coordenada Y
-;  AL = cor
-;endereco = A000H:(CX + DX * 320)
-DESENHA_PIXEL proc
-    mov BL, AL          ; Guarda a cor em BL
-
-    mov AX, DX          ; AX = Y
-    mov DX, 320         ; DX = 320
-    mul DX              ; DX:AX = Y * 320
-
-    add AX, CX          ; AX = Y * 320 + X
-
-    mov DI, AX          ; DI = offset do pixel
-
-    mov AL, BL          ; Recupera a cor
-
-    mov ES:[DI], AL     ; Escreve a cor do pixel na mem?ria de v?deo
-
-    ret              
-
-endp
-
-DESENHA_ASCII proc
-exibir:
-    lodsb               ;DS:SI ? AL
-    
-    cmp AL, 0           ;Fim da string
-    je fim
-
-    cmp AL, 13          ;CR
-    je exibir
-
-    cmp AL, 10          ;LF
-    je nova_linha
-    
-    cmp AL, ' '             ; Espa?o n?o desenha
-    je proximo_caractere
-
-    mov CX, ASCII_X         ; CX = X
-    mov DX, ASCII_Y         ; DX = Y
-    mov AL, ASCII_COR       ; AL = cor
-    call DESENHA_PIXEL
-
-proximo_caractere:
-    add ASCII_X, 3        
-    jmp exibir
-    
-nova_linha:
-    mov ASCII_X, 0          ; Volta para o in?cio da linha
-    add ASCII_Y, 3             ; Pr?xima linha
-    jmp exibir
-
-fim:
+; ---------------------------------------------------------------------
+; Funcao: LIMPAR_TELA - preenche toda a VRAM com a cor 0 (preto).
+; Entrada: Nenhuma; usada em transicoes.
+; Saida: ES = 0A000h, VRAM preta e DF = 0. Altera AX, CX e DI.
+; ---------------------------------------------------------------------
+LIMPAR_TELA proc
+    mov AX, 0A000h
+    mov ES, AX
+    xor DI, DI
+    xor AX, AX
+    mov cx, 32000            ; 32000 words = 64000 bytes (tela inteira)
+    cld
+    rep stosw
     ret
-endp
+LIMPAR_TELA endp
 
-; Aguarda uma tecla e retorna ao modo texto.
-FINALIZA proc
-    mov AH, 00h          ; Fun??o BIOS para esperar uma tecla
-    int 16h              ; Aguarda o usu?rio pressionar uma tecla
+; ---------------------------------------------------------------------
+; Funcao: PREENCHER_LINHAS - pinta um retangulo de cor unica.
+; Entrada: AL = cor (byte direto, nao indice de paleta)
+;          CX = largura em pixels
+;          DX = altura em linhas (0 nao desenha)
+;          ASCII_X, ASCII_Y = canto superior esquerdo
+;          DS = dados do jogo; ES = 0A000h.
+; Saida:   Retangulo preenchido na VRAM; registradores preservados.
+; ---------------------------------------------------------------------
+PREENCHER_LINHAS proc
+    push AX
+    push BX
+    push CX
+    push DX
+    push SI
+    push DI
 
-    mov AX, 0003h        ; Seleciona o modo texto 80x25
-    int 10h              ; Volta para o modo texto
+    mov SI, DX               ; SI = contador de linhas (mul sobrescreve DX)
+    cmp SI, 0
+    je  preencher_fim
 
-    ;Encerra o programa
-    mov AX, 4C00h     
-    int 21h              
+    mov BH, AL               ; guarda a cor
+    mov AX, ASCII_Y
+    mov DX, LARG_TELA
+    mul DX                   ; AX = Y * 320
+    add AX, ASCII_X
+    mov DI, AX               ; DI = offset inicial na VRAM
+    mov AL, BH
+    mov BX, CX               ; BX = largura (preservada entre linhas)
 
-FINALIZA endp
+preencher_linha:
+    mov CX, BX
+    rep stosb                ; pinta a linha
+    ; STOSB ja avancou BX pixels. Completa a distancia ate
+    ; a mesma coluna da linha seguinte.
+    add DI, LARG_TELA
+    sub DI, BX
+    dec SI
+    jnz preencher_linha
 
+preencher_fim:
+    pop DI
+    pop SI
+    pop DX
+    pop CX
+    pop BX
+    pop AX
+    ret
+PREENCHER_LINHAS endp
+
+; ---------------------------------------------------------------------
+; Funcao: RECORTA_X - limita um trecho horizontal a largura da tela.
+; Entrada: AX = X inicial (com sinal), CX = largura original
+; Saida:   AX = primeiro X visivel, CX = largura visivel (0 = fora)
+; ---------------------------------------------------------------------
+RECORTA_X proc
+    push BX
+
+    cmp AX, 0
+    jge recorta_dir          ; X ja visivel
+    mov BX, AX
+    neg BX                   ; BX = colunas cortadas a esquerda
+    cmp BX, CX
+    jae recorta_nada         ; tudo fora pela esquerda
+    sub CX, BX
+    xor AX, AX               ; primeira coluna visivel = 0
+
+recorta_dir:
+    mov BX, LARG_TELA
+    sub BX, AX               ; BX = colunas ate a borda direita
+    jle recorta_nada         ; tudo fora pela direita
+    cmp CX, BX
+    jbe recorta_fim
+    mov CX, BX               ; corta excesso a direita
+
+recorta_fim:
+    pop BX
+    ret
+
+recorta_nada:
+    xor CX, CX
+    jmp recorta_fim
+RECORTA_X endp
+
+; ---------------------------------------------------------------------
+; Funcao: ASCII_PARA_INDICE - converte ASCII no indice do glifo em FONTE_GLYPHS.
+; Entrada: AL = caractere ASCII (maiuscula ou minuscula)
+; Saida:   AL = indice do glifo (desconhecido = G_ESPACO)
+; ---------------------------------------------------------------------
+ASCII_PARA_INDICE proc
+    push BX
+    push CX
+
+    cmp AL, 'a'              ; minuscula -> maiuscula
+    jb  procura
+    cmp AL, 'z'
+    ja  procura
+    sub AL, 20H
+
+procura:
+    mov BX, offset FONTE_CHARS
+    mov CX, NUM_GLYPHS
+
+procura_loop:
+    cmp AL, [BX]
+    je  achou
+    inc BX
+    loop procura_loop
+
+    mov AL, G_ESPACO         ; nao existe: usa espaco
+    jmp fim_conversao
+
+achou:
+    sub BX, offset FONTE_CHARS
+    mov AL, BL                ; AL = indice do glifo
+
+fim_conversao:
+    pop CX
+    pop BX
+    ret
+ASCII_PARA_INDICE endp
+
+; ---------------------------------------------------------------------
+; Funcao: DESENHA_CARACTERE - desenha um glifo 5x8 na VRAM.
+; Entrada: AL = indice do glifo
+;          DI = endereco da paleta (usa a cor em [DI+1])
+;          ASCII_X, ASCII_Y = posicao inicial
+;          DS = dados do jogo; ES = 0A000h.
+; Saida:   Glifo desenhado na VRAM; registradores e coordenadas preservados.
+; ---------------------------------------------------------------------
+DESENHA_CARACTERE proc
+    push AX
+    push BX
+    push CX
+    push DX
+    push SI
+    push DI
+    push BP
+
+    xor AH, AH
+    shl AX, 3                ; AX = indice * 8 (8 bytes por glifo)
+    mov SI, offset FONTE_GLYPHS
+    add SI, AX               ; SI = bytes do glifo
+
+    mov AX, ASCII_Y
+    mov BX, LARG_TELA
+    mul BX                   ; AX = Y * 320
+    add AX, ASCII_X
+    mov BH, [DI + 1]         ; BH = cor (entrada 1 da paleta)
+    mov DI, AX               ; DI = offset na VRAM
+
+    mov AL, BH               ; AL = cor (para stosb)
+    mov BP, ALTURA_GLIFO           ; 8 linhas
+
+proxima_linha:
+    mov BL, [SI]             ; BL = bitmap da linha
+    inc SI
+    mov CX, LARGURA_GLIFO          ; 5 colunas
+
+proximo_pixel:
+    test BL, 10H             ; bit 4 = pixel mais a esquerda
+    jz   pixel_vazio
+    stosb                    ; pinta
+    jmp  proximo_bit
+
+pixel_vazio:
+    inc DI                   ; pula sem pintar
+
+proximo_bit:
+    shl BL, 1
+    loop proximo_pixel
+
+    add DI, LARG_TELA - LARGURA_GLIFO
+    dec BP
+    jnz proxima_linha
+
+    pop BP
+    pop DI
+    pop SI
+    pop DX
+    pop CX
+    pop BX
+    pop AX
+    ret
+DESENHA_CARACTERE endp
+
+; ---------------------------------------------------------------------
+; Funcao: ESCREVER_TEXTO - desenha uma string usando a fonte bitmap.
+; Entrada: SI = texto terminado em 0
+;          DI = endereco da paleta
+;          CX = avanco X por caractere
+;          DX = avanco Y por quebra de linha
+;          ASCII_X, ASCII_Y = posicao inicial
+;          DS = dados do jogo; ES = 0A000h.
+; Saida:   ASCII_X, ASCII_Y = posicao apos o texto
+; ---------------------------------------------------------------------
+ESCREVER_TEXTO proc
+    push AX
+    push BX
+    push SI
+
+    mov BX, ASCII_X          ; BX = X inicial (restaurado em LF)
+
+texto_exibe:
+    lodsb
+    cmp AL, 0
+    je  texto_fim
+    cmp AL, 13               ; CR: ignora
+    je  texto_exibe
+    cmp AL, 10               ; LF: proxima linha
+    je  texto_nova_linha
+
+    call ASCII_PARA_INDICE
+    call DESENHA_CARACTERE
+    add ASCII_X, CX
+    jmp texto_exibe
+
+texto_nova_linha:
+    mov ASCII_X, BX
+    add ASCII_Y, DX
+    jmp texto_exibe
+
+texto_fim:
+    pop SI
+    pop BX
+    pop AX
+    ret
+ESCREVER_TEXTO endp
+
+; ---------------------------------------------------------------------
+; Funcao: DESENHAR_CAIXA - desenha a moldura de um botao (3 linhas de celulas).
+; Entrada: CX = numero de celulas entre os cantos
+;          DI = endereco da paleta
+;          ASCII_X, ASCII_Y = canto superior esquerdo
+;          DS = dados do jogo; ES = 0A000h.
+; Saida:   ASCII_X, ASCII_Y preservados
+; ---------------------------------------------------------------------
+DESENHAR_CAIXA proc
+    push AX
+    push BX
+    push CX
+    push DX
+    push SI
+    push BP
+
+    mov SI, ASCII_X
+    mov DX, CX               ; DX = repeticoes do meio
+    mov BX, offset CAIXA_GLIFOS
+    mov BP, 3                ; 3 linhas
+
+caixa_linha:
+    mov AL, [BX]
+    call DESENHA_CARACTERE
+    add ASCII_X, LARGURA_GLIFO
+
+    mov AL, [BX + 1]
+    mov CX, DX
+caixa_meio:
+    call DESENHA_CARACTERE
+    add ASCII_X, LARGURA_GLIFO
+    loop caixa_meio
+
+    mov AL, [BX + 2]
+    call DESENHA_CARACTERE
+
+    mov ASCII_X, SI
+    add ASCII_Y, ALTURA_GLIFO
+    add BX, 3
+    dec BP
+    jnz caixa_linha
+
+    sub ASCII_Y, 3 * ALTURA_GLIFO  ; restaura Y inicial
+    pop BP
+    pop SI
+    pop DX
+    pop CX
+    pop BX
+    pop AX
+    ret
+DESENHAR_CAIXA endp
+
+; ---------------------------------------------------------------------
+; Funcao: DESENHA_ASCII_PALETA - desenha sprite com cores indexadas por paleta.
+; '0' no bitmap = pixel transparente (nao sobrescreve o fundo).
+; Entrada: SI = sprite; BX = paleta
+;          CX = largura; DX = altura
+;          ASCII_X, ASCII_Y = canto superior esquerdo
+;          DS = dados do jogo; ES = 0A000h.
+; Saida:   Sprite desenhado na VRAM; registradores e coordenadas preservados.
+; ---------------------------------------------------------------------
+DESENHA_ASCII_PALETA proc
+    push AX
+    push BX
+    push CX
+    push DX
+    push SI
+    push DI
+    push BP
+
+    mov BP, DX               ; altura (mul sobrescreve DX)
+    mov AX, ASCII_Y
+    mov DX, LARG_TELA
+    mul DX
+    add AX, ASCII_X
+    mov DI, AX
+    mov DX, CX               ; DX = largura (usada em cada linha)
+
+paleta_linha:
+    mov CX, DX
+
+paleta_pixel:
+    lodsb
+    sub AL, '0'
+    cmp AL, 0
+    je  paleta_vazio         ; indice 0 = transparente
+    xlat                     ; AL = paleta[AL]
+    stosb
+    jmp paleta_proximo
+
+paleta_vazio:
+    inc DI
+
+paleta_proximo:
+    loop paleta_pixel
+
+    add DI, LARG_TELA
+    sub DI, DX
+    dec BP
+    jnz paleta_linha
+
+    pop BP
+    pop DI
+    pop SI
+    pop DX
+    pop CX
+    pop BX
+    pop AX
+    ret
+DESENHA_ASCII_PALETA endp
+
+; ---------------------------------------------------------------------
+; Funcao: APAGAR_SPRITE - pinta um retangulo com recorte horizontal.
+; Entrada: AL = cor; CX = largura; DX = altura
+;          ASCII_X, ASCII_Y = posicao
+;          DS = dados do jogo; ES = 0A000h.
+; Saida:   Retangulo preenchido na VRAM; coordenadas preservadas.
+; ---------------------------------------------------------------------
+APAGAR_SPRITE proc
+    push AX
+    push BX
+    push CX
+    push DX
+    push ASCII_X
+
+    mov BL, AL               ; BL = cor
+    mov AX, ASCII_X
+    call RECORTA_X           ; AX = X visivel, CX = largura visivel
+    jcxz apagar_fim
+    mov ASCII_X, AX
+    mov AL, BL
+    call PREENCHER_LINHAS
+
+apagar_fim:
+    pop ASCII_X
+    pop DX
+    pop CX
+    pop BX
+    pop AX
+    ret
+APAGAR_SPRITE endp
+
+; ---------------------------------------------------------------------
+; Funcao: DESENHA_SPRITE_RECORTADO - desenha o sprite com recorte horizontal.
+; Entrada: SI = sprite; BX = paleta
+;          CX = largura total; DX = altura total
+;          ASCII_X, ASCII_Y = posicao (X pode ser negativo)
+;          DS = dados do jogo; ES = 0A000h.
+; Saida:   Colunas visiveis desenhadas na VRAM; coordenadas preservadas.
+; ---------------------------------------------------------------------
+DESENHA_SPRITE_RECORTADO proc
+    push AX
+    push BX
+    push CX
+    push DX
+    push SI
+    push DI
+    push BP
+    push ASCII_X
+    push ASCII_Y
+
+    mov BP, DX               ; BP = linhas restantes
+    ; O recorte muda quantos pixels desenhamos, mas o bitmap
+    ; continua com a largura original entre o inicio de duas linhas.
+    mov DI, CX               ; DI = passo de linha da origem
+    mov AX, ASCII_X
+    call RECORTA_X           ; AX = X visivel, CX = largura visivel
+    jcxz recortado_fim
+
+    mov DX, AX
+    sub DX, ASCII_X          ; DX = colunas cortadas a esquerda
+    add SI, DX               ; pula no sprite
+    mov ASCII_X, AX
+    mov DX, 1                ; 1 linha por chamada
+
+recortado_linha:
+    call DESENHA_ASCII_PALETA
+    add SI, DI               ; proxima linha do sprite
+    inc ASCII_Y
+    dec BP
+    jnz recortado_linha
+
+recortado_fim:
+    pop ASCII_Y
+    pop ASCII_X
+    pop BP
+    pop DI
+    pop SI
+    pop DX
+    pop CX
+    pop BX
+    pop AX
+    ret
+DESENHA_SPRITE_RECORTADO endp
+
+; ---------------------------------------------------------------------
+; Funcao: COPIA_FUNDO - salva ou restaura um retangulo entre VRAM e buffer.
+; Entrada: AL = 0 salva (VRAM -> buffer); != 0 restaura
+;          SI = buffer (largura*altura bytes)
+;          CX = largura; DX = altura
+;          ASCII_X, ASCII_Y = canto superior esquerdo
+;          ES = 0A000H
+; Saida:   Pixels copiados para o buffer ou para a VRAM; registradores preservados.
+; ---------------------------------------------------------------------
+COPIA_FUNDO proc
+    push AX
+    push BX
+    push CX
+    push DX
+    push SI
+    push DI
+    push BP
+
+    mov BP, DX               ; altura
+    mov BH, AL               ; sentido da copia
+    mov AX, ASCII_Y
+    mov DX, LARG_TELA
+    mul DX                   ; AX = Y * 320
+    add AX, ASCII_X
+    mov DI, AX
+    mov DX, CX               ; DX = largura
+
+fundo_linha:
+    mov CX, DX
+
+fundo_pixel:
+    test BH, BH
+    jnz fundo_restaura
+    mov AL, ES:[DI]          ; salva
+    mov [SI], AL
+    jmp fundo_proximo
+
+fundo_restaura:
+    mov AL, [SI]             ; restaura
+    mov ES:[DI], AL
+
+fundo_proximo:
+    inc SI
+    inc DI
+    loop fundo_pixel
+
+    add DI, LARG_TELA
+    sub DI, DX
+    dec BP
+    jnz fundo_linha
+
+    pop BP
+    pop DI
+    pop SI
+    pop DX
+    pop CX
+    pop BX
+    pop AX
+    ret
+COPIA_FUNDO endp
+
+; ---------------------------------------------------------------------
+; Funcao: DESENHA_TIRO - salva o fundo sob o tiro e desenha o retangulo colorido.
+; Entrada: BX = registro do tiro; ES = 0A000H
+; Saida:   Atualiza ASCII_X/Y e o buffer T_FUNDO do tiro; pinta o projetil.
+; ---------------------------------------------------------------------
+DESENHA_TIRO proc
+    push AX
+    push CX
+    push DX
+    push SI
+
+    mov AX, [BX + T_X]
+    mov ASCII_X, AX
+    mov AX, [BX + T_Y]
+    mov ASCII_Y, AX
+    lea SI, [BX + T_FUNDO]
+    mov CX, [BX + T_LARG]
+    mov DX, [BX + T_ALT]
+    xor AL, AL               ; 0 = salvar
+    call COPIA_FUNDO
+    mov AL, [BX + T_COR]
+    call PREENCHER_LINHAS
+
+    pop SI
+    pop DX
+    pop CX
+    pop AX
+    ret
+DESENHA_TIRO endp
+
+; ---------------------------------------------------------------------
+; Funcao: MOVER_SPRITE - apaga, desloca e redesenha um sprite.
+; Entrada: AX = deslocamento horizontal (com sinal)
+;          DI = MODO_REAPARECE ou MODO_SOME
+;          SI, BX, CX, DX = sprite, paleta, largura, altura
+;          FUNDO_COR = cor usada para apagar
+;          DS = dados do jogo; ES = 0A000h.
+; Saida:   ASCII_X = nova posicao; CF = 1 se saiu (MODO_SOME)
+; ---------------------------------------------------------------------
+MOVER_SPRITE proc
+    push AX
+    push BX
+    push CX
+    push DX
+    push BP
+
+    mov BP, AX
+    mov AL, FUNDO_COR
+    call APAGAR_SPRITE
+
+    mov AX, ASCII_X
+    add AX, BP
+    mov ASCII_X, AX
+
+    cmp BP, 0
+    jl  mover_esquerda
+
+    cmp AX, LARG_TELA
+    jl  mover_visivel
+    cmp DI, MODO_SOME
+    je  mover_some_dir
+
+    sub AX, PERIODO_TELA     ; reaparece pela esquerda
+    mov ASCII_X, AX
+    jmp mover_visivel
+
+mover_some_dir:
+    mov ASCII_X, LARG_TELA
+    jmp mover_fora
+
+mover_esquerda:
+    mov BP, CX
+    neg BP                   ; BP = -largura
+    cmp AX, BP
+    jg  mover_visivel
+    cmp DI, MODO_SOME
+    je  mover_some_esq
+
+    add AX, PERIODO_TELA     ; reaparece pela direita
+    mov ASCII_X, AX
+    jmp mover_visivel
+
+mover_some_esq:
+    mov ASCII_X, BP
+    jmp mover_fora
+
+mover_visivel:
+    call DESENHA_SPRITE_RECORTADO
+    clc
+    jmp mover_fim
+
+mover_fora:
+    stc
+
+mover_fim:
+    pop BP
+    pop DX
+    pop CX
+    pop BX
+    pop AX
+    ret
+MOVER_SPRITE endp
+
+; ---------------------------------------------------------------------
+; Funcao: MOVER_SPRITES_MENU - anima as 3 naves e o jipe do menu em looping.
+; Entrada: AX = deslocamento horizontal por quadro
+;          DS = dados do jogo; ES = 0A000h.
+; Saida:   SPRITES_MENU_X atualizado
+; ---------------------------------------------------------------------
+MOVER_SPRITES_MENU proc
+    push AX
+    push BX
+    push CX
+    push DX
+    push SI
+    push DI
+
+    mov FUNDO_COR, COR_FUNDO
+    mov ASCII_Y, 100
+    mov DI, MODO_REAPARECE
+
+    mov DX, SPRITES_MENU_X[0]
+    mov ASCII_X, DX
+    mov SI, offset NAVES_SPRITE
+    mov BX, offset NAVE_PALETA
+    mov CX, LARGURA_NAVE
+    mov DX, ALTURA_NAVE
+    call MOVER_SPRITE
+    mov DX, ASCII_X
+    mov SPRITES_MENU_X[0], DX
+
+    mov DX, SPRITES_MENU_X[2]
+    mov ASCII_X, DX
+    mov SI, offset NAVES_SPRITE + TAM_NAVE
+    mov DX, ALTURA_NAVE
+    call MOVER_SPRITE
+    mov DX, ASCII_X
+    mov SPRITES_MENU_X[2], DX
+
+    mov DX, SPRITES_MENU_X[4]
+    mov ASCII_X, DX
+    mov SI, offset NAVES_SPRITE + 2 * TAM_NAVE
+    mov DX, ALTURA_NAVE
+    call MOVER_SPRITE
+    mov DX, ASCII_X
+    mov SPRITES_MENU_X[4], DX
+
+    mov DX, SPRITES_MENU_X[6]
+    mov ASCII_X, DX
+    mov SI, offset JIPE_SPRITE
+    mov BX, offset JIPE_PALETA
+    mov CX, LARGURA_JIPE
+    mov DX, ALTURA_JIPE
+    call MOVER_SPRITE
+    mov DX, ASCII_X
+    mov SPRITES_MENU_X[6], DX
+
+    pop DI
+    pop SI
+    pop DX
+    pop CX
+    pop BX
+    pop AX
+    ret
+MOVER_SPRITES_MENU endp
+
+; ---------------------------------------------------------------------
+; Funcao: ESPERA_RETRACO - bloqueia ate o inicio do proximo retraco vertical.
+; Entrada: Estado da porta VGA 3DAh.
+; Saida:   Retorna no inicio do proximo retraco; AX e DX preservados.
+; ---------------------------------------------------------------------
+ESPERA_RETRACO proc
+    push AX
+    push DX
+
+    mov DX, 3DAH
+
+retraco_sai:
+    in AL, DX
+    test AL, 08H             ; bit 3 = retraco em andamento
+    jnz retraco_sai          ; espera o atual terminar
+
+retraco_entra:
+    in AL, DX
+    test AL, 08H
+    jz  retraco_entra        ; espera o proximo comecar
+
+    pop DX
+    pop AX
+    ret
+ESPERA_RETRACO endp
+
+; ---------------------------------------------------------------------
+; Funcao: CONTAGEM_TEMPO - decrementa o tempo a cada 18 ticks do BIOS.
+; Entrada: TICKS_REFERENCIA = referencia de ticks; SEGUNDOS_RESTANTES = segundos
+; Saida: AL = 1 ao consumir um segundo e atualizar TEMPO_TEXTO.
+;          Sem novo segundo, AL conserva o valor retornado pela BIOS.
+; ---------------------------------------------------------------------
+CONTAGEM_TEMPO proc
+    push BX
+    push DX
+
+    mov AL, 0                ; valor padrao: nao mudou
+
+    mov AH, 00H
+    int 1AH                  ; DX = ticks desde meia-noite
+
+    mov BX, DX
+    sub BX, TICKS_REFERENCIA
+
+    cmp BX, 18
+    jb contagem_fim          ; ainda nao passou 1 segundo
+
+    add TICKS_REFERENCIA, 18  ; avanca referencia preservando excedente
+    dec SEGUNDOS_RESTANTES
+
+    mov AX, SEGUNDOS_RESTANTES
+    xor DX, DX
+    mov BX, 10
+    div BX                   ; AL = dezenas, DL = unidades
+    add AL, '0'
+    mov TEMPO_TEXTO[0], AL
+    add DL, '0'
+    mov TEMPO_TEXTO[1], DL
+
+    mov AL, 1                ; sinaliza mudanca
+
+contagem_fim:
+    pop DX
+    pop BX
+    ret
+CONTAGEM_TEMPO endp
+
+; ---------------------------------------------------------------------
+; Funcao: ATUALIZA_TEMPO - apaga e redesenha o tempo na barra de status.
+; Entrada: TEMPO_TEXTO = dois digitos
+; Saida:   Novos digitos na VRAM; altera ASCII_X e ASCII_Y.
+; ---------------------------------------------------------------------
+ATUALIZA_TEMPO proc
+    push AX
+    push CX
+    push DX
+    push DI
+    push SI
+
+    mov ASCII_X, 300
+    mov ASCII_Y, 6
+
+    mov AL, COR_FUNDO
+    mov CX, 2 * (LARGURA_GLIFO + 1)
+    mov DX, ALTURA_GLIFO
+    call PREENCHER_LINHAS
+
+    mov ASCII_X, 300
+    mov ASCII_Y, 6
+    mov SI, offset TEMPO_TEXTO
+    mov DI, offset COR_TEMPO
+    mov CX, 6
+    mov DX, 8
+    call ESCREVER_TEXTO
+
+    pop SI
+    pop DI
+    pop DX
+    pop CX
+    pop AX
+    ret
+ATUALIZA_TEMPO endp
+
+; ---------------------------------------------------------------------
+; Funcao: TRATA_TECLADO - handler da INT 09h; rastreia pressionamento/soltura
+; das setas. Encadeia com o handler anterior no final.
+; Entrada: IRQ1 e scan code da porta 60h.
+; Saida:   Atualiza TECLA_ESQ ou TECLA_DIR e encadeia o vetor anterior.
+; ---------------------------------------------------------------------
+TRATA_TECLADO proc far
+    push AX
+    push DS
+
+    mov AX, @data
+    mov DS, AX
+
+    in AL, 60H               ; le scan code
+
+    cmp AL, 4BH              ; seta esquerda pressionada
+    je tecla_esq_press
+    cmp AL, 0CBH             ; seta esquerda solta
+    je tecla_esq_solto
+    cmp AL, 4DH              ; seta direita pressionada
+    je tecla_dir_press
+    cmp AL, 0CDH             ; seta direita solta
+    je tecla_dir_solto
+    jmp teclado_fim
+
+tecla_esq_press:
+    mov TECLA_ESQ, 1
+    jmp teclado_fim
+
+tecla_esq_solto:
+    mov TECLA_ESQ, 0
+    jmp teclado_fim
+
+tecla_dir_press:
+    mov TECLA_DIR, 1
+    jmp teclado_fim
+
+tecla_dir_solto:
+    mov TECLA_DIR, 0
+
+teclado_fim:
+    pop DS
+    pop AX
+
+    push OLD_INT09_SEG
+    push OLD_INT09_OFF
+    retf                     ; encadeia com o handler anterior
+TRATA_TECLADO endp
+
+; ---------------------------------------------------------------------
+; Funcao: ATUALIZA_TIRO - avanca 1 quadro do tiro: restaura fundo, move, e
+; desenha; desativa ao atingir T_LIM.
+; Entrada: BX = registro do tiro; ES = 0A000H
+; Saida:   Move e desenha o tiro ou zera T_ATIVO quando chega ao limite.
+; ---------------------------------------------------------------------
+ATUALIZA_TIRO proc
+    push AX
+    push CX
+    push DX
+    push SI
+
+    cmp word ptr [BX + T_ATIVO], 0
+    je  tiro_fim
+
+    mov AX, [BX + T_X]
+    mov ASCII_X, AX
+    mov AX, [BX + T_Y]
+    mov ASCII_Y, AX
+    lea SI, [BX + T_FUNDO]
+    mov CX, [BX + T_LARG]
+    mov DX, [BX + T_ALT]
+    mov AL, 1                ; restaura fundo
+    call COPIA_FUNDO
+
+    mov AX, [BX + T_X]
+    add AX, [BX + T_DX]
+    mov [BX + T_X], AX
+    mov AX, [BX + T_Y]
+    add AX, [BX + T_DY]
+    mov [BX + T_Y], AX
+
+    cmp word ptr [BX + T_DX], 0
+    je  tiro_vertical
+
+    mov AX, [BX + T_X]       ; tiro frontal
+    cmp AX, [BX + T_LIM]
+    jge tiro_desativa
+    jmp tiro_desenha
+
+tiro_vertical:
+    mov AX, [BX + T_Y]       ; tiro superior
+    cmp AX, [BX + T_LIM]
+    jle tiro_desativa
+
+tiro_desenha:
+    call DESENHA_TIRO
+    jmp tiro_fim
+
+tiro_desativa:
+    mov word ptr [BX + T_ATIVO], 0
+
+tiro_fim:
+    pop SI
+    pop DX
+    pop CX
+    pop AX
+    ret
+ATUALIZA_TIRO endp
+
+; ---------------------------------------------------------------------
+; Funcao: DISPARAR - dispara os dois canhoes (frontal e superior), cada um se
+; o tiro anterior ja tiver sumido.
+; Entrada: JIPE_X, JIPE_Y, JIPE_ALT; ES = 0A000H
+; Saida:   Preenche e desenha cada tiro cujo registro estava livre.
+; ---------------------------------------------------------------------
+DISPARAR proc
+    push AX
+    push BX
+
+    mov BX, offset TIRO_CIMA
+    cmp word ptr [BX + T_ATIVO], 0
+    jne disparar_frente
+    mov AX, JIPE_X
+    add AX, CANHAO_CIMA_X
+    mov [BX + T_X], AX
+    mov AX, JIPE_Y - ALT_TIRO_CIMA
+    sub AX, JIPE_ALT
+    mov [BX + T_Y], AX
+    mov word ptr [BX + T_ATIVO], 1
+    call DESENHA_TIRO
+
+disparar_frente:
+    mov BX, offset TIRO_FRENTE
+    cmp word ptr [BX + T_ATIVO], 0
+    jne disparar_fim
+    mov AX, JIPE_X
+    add AX, LARGURA_JIPE + 2         ; 2 px de folga (jipe anda ate 2 px/q)
+    mov [BX + T_X], AX
+    add AX, ALCANCE_TIRO
+    mov [BX + T_LIM], AX
+    mov AX, JIPE_Y + CANHAO_FRENTE_Y
+    sub AX, JIPE_ALT
+    mov [BX + T_Y], AX
+    mov word ptr [BX + T_ATIVO], 1
+    call DESENHA_TIRO
+
+disparar_fim:
+    pop BX
+    pop AX
+    ret
+DISPARAR endp
+
+; ---------------------------------------------------------------------
+; Funcao: ALEATORIO - PRNG xorshift de 16 bits (periodo 65535, semente != 0).
+; Entrada: CX = faixa (>= 1)
+; Saida:   AX = valor 0..CX-1
+; ---------------------------------------------------------------------
+ALEATORIO proc
+    push DX
+    push CX
+
+    mov AX, SEMENTE
+    mov DX, AX
+    mov CL, 7
+    shl DX, CL
+    xor AX, DX               ; x ^= x << 7
+    mov DX, AX
+    mov CL, 9
+    shr DX, CL
+    xor AX, DX               ; x ^= x >> 9
+    mov DX, AX
+    mov CL, 8
+    shl DX, CL
+    xor AX, DX               ; x ^= x << 8
+    mov SEMENTE, AX
+
+    pop CX
+    xor DX, DX
+    div CX                   ; DX = AX mod CX
+    mov AX, DX
+
+    pop DX
+    ret
+ALEATORIO endp
+
+; ---------------------------------------------------------------------
+; Funcao: INICIA_ALEATORIO - mistura ticks do BIOS com o timer 8253 para gerar
+; uma semente diferente a cada chamada.
+; Entrada: Ticks do BIOS e contador do timer 8253.
+; Saida:   SEMENTE inicializada com valor diferente de zero.
+; ---------------------------------------------------------------------
+INICIA_ALEATORIO proc
+    push AX
+    push CX
+    push DX
+
+    mov AH, 00H
+    int 1AH                  ; CX:DX = ticks
+    xor DX, CX
+    xor AL, AL
+    out 43H, AL
+    in  AL, 40H
+    mov AH, AL
+    in  AL, 40H              ; AX = contador do timer
+    xor AX, DX
+    jnz semente_ok
+    mov AX, 0ACE1H           ; semente nao pode ser 0
+semente_ok:
+    mov SEMENTE, AX
+
+    pop DX
+    pop CX
+    pop AX
+    ret
+INICIA_ALEATORIO endp
+
+; ---------------------------------------------------------------------
+; Funcao: ACHA_BURACO - localiza as colunas do digito '3' (buraco) no bitmap
+; da variacao de cratera.
+; Entrada: AL = variacao (0..2)
+; Saida:   CF = 0: AL = 1a coluna, AH = ultima coluna com '3'
+;          CF = 1: nao ha '3' no bitmap
+; ---------------------------------------------------------------------
+ACHA_BURACO proc
+    push BX
+    push DX
+    push SI
+
+    xor AH, AH
+    mov DX, TAM_CRATERA
+    mul DX
+    mov SI, offset CRATERAS_SPRITE
+    add SI, AX
+
+    mov BH, 0FFH             ; menor coluna com '3'
+    xor BL, BL               ; maior coluna com '3'
+    mov DL, ALTURA_CRATERA
+
+buraco_linha:
+    xor DH, DH
+
+buraco_pixel:
+    cmp byte ptr [SI], '3'
+    jne buraco_seguinte
+    cmp DH, BH
+    jae buraco_max
+    mov BH, DH
+buraco_max:
+    cmp DH, BL
+    jbe buraco_seguinte
+    mov BL, DH
+
+buraco_seguinte:
+    inc SI
+    inc DH
+    cmp DH, LARGURA_CRATERA
+    jb  buraco_pixel
+    dec DL
+    jnz buraco_linha
+
+    cmp BH, 0FFH
+    je  buraco_nenhum
+    mov AL, BH
+    mov AH, BL
+    clc
+    jmp buraco_fim
+
+buraco_nenhum:
+    stc
+
+buraco_fim:
+    pop SI
+    pop DX
+    pop BX
+    ret
+ACHA_BURACO endp
+
+; ---------------------------------------------------------------------
+; Funcao: VERIFICA_SALTO_CRATERAS - compara as rodas do jipe com as colunas do
+; buraco de cada cratera visivel.
+;   - roda sobre buraco + jipe no chao  = colisao (CF = 1)
+;   - roda sobre buraco + jipe no ar    = marca FLAG_SOBREVOADA
+;   - buraco inteiro atras + salto ok   = +SCORE_CRATERA (uma vez)
+; Entrada: JIPE_X, JIPE_ALT, CRATERAS_X/TIPO; ES = 0A000h.
+; Saida:   CF = 1 em colisao; CF = 0 caso contrario. Pode alterar flags e score.
+; ---------------------------------------------------------------------
+VERIFICA_SALTO_CRATERAS proc
+    push AX
+    push BX
+    push CX
+    push DX
+    push SI
+    push DI
+
+    xor BX, BX               ; BX = slot * 2
+
+verif_slot:
+    mov DI, CRATERAS_X[BX]
+    cmp DI, CRATERA_LIVRE
+    je  verif_prox
+    mov SI, BX
+    shr SI, 1                ; SI = slot
+
+    mov AL, CRATERAS_TIPO[SI]
+    test AL, FLAG_PONTUADA
+    jnz verif_prox
+    and AL, MASCARA_TIPO
+    call ACHA_BURACO         ; AL = 1a coluna, AH = ultima
+    jc  verif_prox
+
+    mov CL, AH
+    xor CH, CH
+    add CX, DI               ; CX = X fim do buraco
+    xor AH, AH
+    add AX, DI               ; AX = X inicio do buraco
+
+    cmp CX, JIPE_X
+    jl  verif_passou         ; buraco ja atras do jipe
+
+    mov DX, JIPE_X
+    add DX, RODA_FIM_JIPE
+    cmp AX, DX
+    jg  verif_prox           ; buraco ainda a frente
+
+    cmp JIPE_ALT, 0
+    jne verif_ar
+    stc
+    jmp verif_fim
+
+verif_ar:
+    or  CRATERAS_TIPO[SI], FLAG_SOBREVOADA
+    jmp verif_prox
+
+verif_passou:
+    test CRATERAS_TIPO[SI], FLAG_SOBREVOADA
+    jz  verif_prox
+    or  CRATERAS_TIPO[SI], FLAG_PONTUADA
+    mov AX, SCORE_CRATERA
+    call SOMAR_SCORE
+
+verif_prox:
+    add BX, 2
+    cmp BX, NUM_CRATERAS * 2
+    jae verif_nada
+    jmp verif_slot
+
+verif_nada:
+    clc
+
+verif_fim:
+    pop DI
+    pop SI
+    pop DX
+    pop CX
+    pop BX
+    pop AX
+    ret
+VERIFICA_SALTO_CRATERAS endp
+
+; ---------------------------------------------------------------------
+; Funcao: INICIA_CRATERAS - libera todos os slots e sorteia o instante da 1a
+; cratera (0..DIST_VAR_CRATERA-1 px).
+; Entrada: SEMENTE.
+; Saida:   Slots liberados e CRATERA_PROX sorteado.
+; ---------------------------------------------------------------------
+INICIA_CRATERAS proc
+    push AX
+    push BX
+    push CX
+
+    xor BX, BX
+cratera_zera:
+    mov CRATERAS_X[BX], CRATERA_LIVRE
+    add BX, 2
+    cmp BX, NUM_CRATERAS * 2
+    jb  cratera_zera
+
+    mov CX, DIST_VAR_CRATERA
+    call ALEATORIO
+    mov CRATERA_PROX, AX
+
+    pop CX
+    pop BX
+    pop AX
+    ret
+INICIA_CRATERAS endp
+
+; ---------------------------------------------------------------------
+; Funcao: CRIA_CRATERA - cria uma cratera na borda direita, se houver slot e
+; espaco livre.
+; Entrada: Slots de obstaculo e SEMENTE.
+; Saida: CF = 0 criada; CF = 1 sem espaco/slot
+; ---------------------------------------------------------------------
+CRIA_CRATERA proc
+    push AX
+    push BX
+    push CX
+
+    call ESPACO_LIVRE
+    jc  cria_fim
+
+    xor BX, BX
+cria_busca:
+    cmp CRATERAS_X[BX], CRATERA_LIVRE
+    je  cria_achou
+    add BX, 2
+    cmp BX, NUM_CRATERAS * 2
+    jb  cria_busca
+    stc
+    jmp cria_fim
+
+cria_achou:
+    mov CRATERAS_X[BX], LARG_TELA
+    mov CX, 3
+    call ALEATORIO           ; 0..2
+    shr BX, 1
+    mov CRATERAS_TIPO[BX], AL
+    clc
+
+cria_fim:
+    pop CX
+    pop BX
+    pop AX
+    ret
+CRIA_CRATERA endp
+
+; ---------------------------------------------------------------------
+; Funcao: ROLA_CRATERAS - cria crateras por distancia e move todas VEL_CHAO px
+; para a esquerda; as que saem liberam o slot.
+; Entrada: ES = 0A000H
+; Altera:  CRATERAS_X, CRATERAS_TIPO, CRATERA_PROX, SEMENTE,
+;          ASCII_X, ASCII_Y, FUNDO_COR
+; Saida:   CRATERAS_X/TIPO e CRATERA_PROX atualizados; sprites reposicionados.
+; ---------------------------------------------------------------------
+ROLA_CRATERAS proc
+    push AX
+    push BX
+    push CX
+    push DX
+    push SI
+    push DI
+
+    sub CRATERA_PROX, VEL_CHAO
+    jg  rola_move
+    call CRIA_CRATERA
+    jc  rola_move
+    mov CX, DIST_VAR_CRATERA
+    call ALEATORIO
+    add AX, DIST_MIN_CRATERA
+    mov CRATERA_PROX, AX
+
+rola_move:
+    xor BX, BX
+
+rola_proximo:
+    cmp CRATERAS_X[BX], CRATERA_LIVRE
+    je  rola_seguinte
+
+    push BX                  ; guarda slot (BX vira paleta)
+    mov AX, CRATERAS_X[BX]
+    mov ASCII_X, AX
+    mov ASCII_Y, Y_SUPERFICIE
+    shr BX, 1
+    mov AL, CRATERAS_TIPO[BX]
+    and AL, MASCARA_TIPO
+    xor AH, AH
+    mov DX, TAM_CRATERA
+    mul DX
+    mov SI, offset CRATERAS_SPRITE
+    add SI, AX
+    mov BX, offset CRATERA_PALETA
+    mov CX, LARGURA_CRATERA
+    mov DX, ALTURA_CRATERA
+    mov DI, MODO_SOME
+    mov FUNDO_COR, COR_SUPERFICIE
+    mov AX, -VEL_CHAO
+    call MOVER_SPRITE
+    pop BX
+    jc  rola_libera
+    mov AX, ASCII_X
+    mov CRATERAS_X[BX], AX
+    jmp rola_seguinte
+
+rola_libera:
+    mov CRATERAS_X[BX], CRATERA_LIVRE
+
+rola_seguinte:
+    add BX, 2
+    cmp BX, NUM_CRATERAS * 2
+    jb  rola_proximo
+
+    pop DI
+    pop SI
+    pop DX
+    pop CX
+    pop BX
+    pop AX
+    ret
+ROLA_CRATERAS endp
+
+; ---------------------------------------------------------------------
+; Funcao: ESPACO_LIVRE - confere a borda direita (X > LARG_TELA - DIST_ENTRE_OBST).
+; Entrada: CRATERAS_X e ROCHAS_X.
+; Saida: CF = 0 livre; CF = 1 ocupado
+; ---------------------------------------------------------------------
+ESPACO_LIVRE proc
+    push BX
+
+    xor BX, BX
+livre_crateras:
+    cmp CRATERAS_X[BX], LARG_TELA - DIST_ENTRE_OBST
+    jg  livre_ocupado
+    add BX, 2
+    cmp BX, NUM_CRATERAS * 2
+    jb  livre_crateras
+
+    xor BX, BX
+livre_rochas:
+    cmp ROCHAS_X[BX], LARG_TELA - DIST_ENTRE_OBST
+    jg  livre_ocupado
+    add BX, 2
+    cmp BX, NUM_ROCHAS * 2
+    jb  livre_rochas
+
+    clc
+    jmp livre_fim
+
+livre_ocupado:
+    stc
+
+livre_fim:
+    pop BX
+    ret
+ESPACO_LIVRE endp
+
+; ---------------------------------------------------------------------
+; Funcao: INICIA_ROCHAS - libera todos os slots e sorteia o instante da 1a
+; rocha (60..60+DIST_VAR_ROCHA-1 px).
+; Entrada: SEMENTE.
+; Saida:   Slots liberados e ROCHA_PROX sorteado.
+; ---------------------------------------------------------------------
+INICIA_ROCHAS proc
+    push AX
+    push BX
+    push CX
+
+    xor BX, BX
+rocha_zera:
+    mov ROCHAS_X[BX], ROCHA_LIVRE
+    add BX, 2
+    cmp BX, NUM_ROCHAS * 2
+    jb  rocha_zera
+
+    mov CX, DIST_VAR_ROCHA
+    call ALEATORIO
+    add AX, 60
+    mov ROCHA_PROX, AX
+
+    pop CX
+    pop BX
+    pop AX
+    ret
+INICIA_ROCHAS endp
+
+; ---------------------------------------------------------------------
+; Funcao: CRIA_ROCHA - cria uma rocha na borda direita, se houver slot/espaco.
+; Entrada: Slots de obstaculo e SEMENTE.
+; Saida: CF = 0 criada; CF = 1 sem espaco/slot
+; ---------------------------------------------------------------------
+CRIA_ROCHA proc
+    push AX
+    push BX
+    push CX
+
+    call ESPACO_LIVRE
+    jc  rocha_cria_fim
+
+    xor BX, BX
+rocha_busca:
+    cmp ROCHAS_X[BX], ROCHA_LIVRE
+    je  rocha_achou
+    add BX, 2
+    cmp BX, NUM_ROCHAS * 2
+    jb  rocha_busca
+    stc
+    jmp rocha_cria_fim
+
+rocha_achou:
+    mov ROCHAS_X[BX], LARG_TELA
+    mov CX, 4
+    call ALEATORIO           ; 0..3
+    shr BX, 1
+    mov ROCHAS_TIPO[BX], AL
+    clc
+
+rocha_cria_fim:
+    pop CX
+    pop BX
+    pop AX
+    ret
+CRIA_ROCHA endp
+
+; ---------------------------------------------------------------------
+; Funcao: ROLA_ROCHAS - cria rochas por distancia e move PASSO_CHAO px para a
+; esquerda; as que saem liberam o slot.
+; Entrada: PASSO_CHAO (word em DS); ES = 0A000H
+; Altera:  ROCHAS_X, ROCHAS_TIPO, ROCHA_PROX, SEMENTE, ASCII_X/Y, FUNDO_COR
+; Saida:   ROCHAS_X/TIPO e ROCHA_PROX atualizados; sprites reposicionados.
+; ---------------------------------------------------------------------
+ROLA_ROCHAS proc
+    push AX
+    push BX
+    push CX
+    push DX
+    push SI
+    push DI
+
+    mov AX, PASSO_CHAO
+    sub ROCHA_PROX, AX
+    jg  rocha_move
+    call CRIA_ROCHA
+    jc  rocha_move
+    mov CX, DIST_VAR_ROCHA
+    call ALEATORIO
+    add AX, DIST_MIN_ROCHA
+    mov ROCHA_PROX, AX
+
+rocha_move:
+    mov AL, [TERRENO_PERTO_PALETA + 1]
+    mov FUNDO_COR, AL
+    xor BX, BX
+
+rocha_proximo:
+    cmp ROCHAS_X[BX], ROCHA_LIVRE
+    je  rocha_seguinte
+
+    push BX
+    mov AX, ROCHAS_X[BX]
+    mov ASCII_X, AX
+    mov ASCII_Y, Y_ROCHA
+    shr BX, 1
+    mov AL, ROCHAS_TIPO[BX]
+    and AL, MASCARA_TIPO
+    xor AH, AH
+    mov DX, TAM_ROCHA
+    mul DX
+    mov SI, offset ROCHAS_SPRITE
+    add SI, AX
+    mov BX, offset ROCHA_PALETA
+    mov CX, LARGURA_ROCHA
+    mov DX, ALTURA_ROCHA
+    mov DI, MODO_SOME
+    mov AX, PASSO_CHAO
+    neg AX
+    call MOVER_SPRITE
+    pop BX
+    jc  rocha_libera
+    mov AX, ASCII_X
+    mov ROCHAS_X[BX], AX
+    jmp rocha_seguinte
+
+rocha_libera:
+    mov ROCHAS_X[BX], ROCHA_LIVRE
+
+rocha_seguinte:
+    add BX, 2
+    cmp BX, NUM_ROCHAS * 2
+    jb  rocha_proximo
+
+    pop DI
+    pop SI
+    pop DX
+    pop CX
+    pop BX
+    pop AX
+    ret
+ROLA_ROCHAS endp
+
+; ---------------------------------------------------------------------
+; Funcao: VERIFICA_TIRO_ROCHAS - checa colisao do tiro frontal (BX) com rochas.
+; Regras por tipo:
+;   tipo 0 (Rocha 1) - indestrutivel; consome o tiro, mantem a rocha.
+;   tipo 1 (Rocha 2) - destruida no 1o disparo.
+;   tipo 2 (Rocha 3) - destruida no 1o disparo.
+;   tipo 3 (Rocha 4) - destruida no 2o disparo (1o seta FLAG_ATINGIDA).
+; Entrada: BX = registro do tiro
+; Altera:  ROCHAS_X, ROCHAS_TIPO, SCORE_TEXTO, ASCII_X/Y
+;
+; NOTA: usar DI (nao BP) para indexar ROCHAS_X/ROCHAS_TIPO porque
+; [BP+disp] enderecaria SS (pilha) e nao DS (dados).
+; Saida:   Consome o tiro em caso de acerto. Pode alterar a rocha e o score.
+; ---------------------------------------------------------------------
+VERIFICA_TIRO_ROCHAS proc
+    push AX
+    push CX
+    push DX
+    push SI
+    push DI
+
+    cmp word ptr [BX + T_ATIVO], 0
+    je  tr_fim
+
+    xor DI, DI               ; DI = slot * 2
+
+tr_slot:
+    mov CX, ROCHAS_X[DI]     ; CX = X da rocha
+    cmp CX, ROCHA_LIVRE
+    je  tr_prox
+
+    ; ---- colisao horizontal ----
+    mov AX, [BX + T_X]
+    add AX, [BX + T_LARG]
+    cmp AX, CX
+    jle tr_prox
+
+    mov AX, [BX + T_X]
+    mov DX, CX
+    add DX, LARGURA_ROCHA
+    cmp AX, DX
+    jge tr_prox
+
+    ; ---- colisao vertical ----
+    mov AX, [BX + T_Y]
+    add AX, [BX + T_ALT]
+    cmp AX, Y_ROCHA
+    jle tr_prox
+
+    mov AX, [BX + T_Y]
+    cmp AX, Y_ROCHA + ALTURA_ROCHA
+    jge tr_prox
+
+    jmp tr_acertou
+
+tr_prox:
+    add DI, 2
+    cmp DI, NUM_ROCHAS * 2
+    jae tr_fim
+    jmp tr_slot
+
+tr_fim:
+    pop DI
+    pop SI
+    pop DX
+    pop CX
+    pop AX
+    ret
+
+tr_acertou:
+    ; Consome o tiro (restaura fundo sob o tiro)
+    mov AX, [BX + T_X]
+    mov ASCII_X, AX
+    mov AX, [BX + T_Y]
+    mov ASCII_Y, AX
+    push CX                  ; guarda X da rocha (COPIA_FUNDO usa CX)
+    lea SI, [BX + T_FUNDO]
+    mov CX, [BX + T_LARG]
+    mov DX, [BX + T_ALT]
+    mov AL, 1
+    call COPIA_FUNDO
+    pop CX
+    mov word ptr [BX + T_ATIVO], 0
+
+    ; Classifica
+    mov SI, DI
+    shr SI, 1                ; SI = slot
+    mov AL, ROCHAS_TIPO[SI]
+    and AL, MASCARA_TIPO
+
+    cmp AL, 0
+    je  tr_fim               ; Rocha 1: indestrutivel
+    cmp AL, 3
+    je  tr_rocha4            ; Rocha 4: 2 disparos
+    jmp tr_destroi           ; Rochas 2 e 3
+
+tr_rocha4:
+    test ROCHAS_TIPO[SI], FLAG_ATINGIDA
+    jnz tr_destroi
+    or  ROCHAS_TIPO[SI], FLAG_ATINGIDA
+    jmp tr_fim               ; 1o disparo: so marca
+
+tr_destroi:
+    mov ASCII_X, CX          ; CX = X da rocha
+    mov ASCII_Y, Y_ROCHA
+    mov AL, [TERRENO_PERTO_PALETA + 1]
+    mov CX, LARGURA_ROCHA
+    mov DX, ALTURA_ROCHA
+    call APAGAR_SPRITE
+    mov word ptr ROCHAS_X[DI], ROCHA_LIVRE
+    mov AX, SCORE_ROCHA
+    call SOMAR_SCORE
+    jmp tr_fim
+VERIFICA_TIRO_ROCHAS endp
+
+; ---------------------------------------------------------------------
+; Funcao: VERIFICA_ROCHAS - colisao jipe x rochas; pontua rochas ultrapassadas
+; com salto limpo.
+; Entrada: JIPE_X, JIPE_ALT, ROCHAS_X/TIPO; ES = 0A000h.
+; Saida: CF = 1 colisao; CF = 0 sem colisao
+; ---------------------------------------------------------------------
+VERIFICA_ROCHAS proc
+    push AX
+    push BX
+    push CX
+    push DX
+    push SI
+    push DI
+
+    xor BX, BX
+
+rver_slot:
+    mov DI, ROCHAS_X[BX]
+    cmp DI, ROCHA_LIVRE
+    je  rver_prox
+    mov SI, BX
+    shr SI, 1
+    test ROCHAS_TIPO[SI], FLAG_PONTUADA
+    jnz rver_prox
+
+    mov AX, DI
+    add AX, MARGEM_ROCHA
+    mov CX, DI
+    add CX, LARGURA_ROCHA - MARGEM_ROCHA
+    mov DX, JIPE_X
+    add DX, MARGEM_JIPE_ROCHA
+    cmp CX, DX
+    jle rver_passou          ; rocha atras do jipe
+
+    mov DX, JIPE_X
+    add DX, LARGURA_JIPE - MARGEM_JIPE_ROCHA
+    cmp AX, DX
+    jge rver_prox            ; rocha a frente
+
+    cmp JIPE_ALT, ALT_LIVRE_ROCHA
+    jl  rver_colide
+    or  ROCHAS_TIPO[SI], FLAG_SOBREVOADA
+    jmp rver_prox
+
+rver_colide:
+    stc
+    jmp rver_fim
+
+rver_passou:
+    test ROCHAS_TIPO[SI], FLAG_SOBREVOADA
+    jz  rver_prox
+    or  ROCHAS_TIPO[SI], FLAG_PONTUADA
+    mov AX, SCORE_ROCHA
+    call SOMAR_SCORE
+
+rver_prox:
+    add BX, 2
+    cmp BX, NUM_ROCHAS * 2
+    jae rver_nada
+    jmp rver_slot
+
+rver_nada:
+    clc
+
+rver_fim:
+    pop DI
+    pop SI
+    pop DX
+    pop CX
+    pop BX
+    pop AX
+    ret
+VERIFICA_ROCHAS endp
+
+; ---------------------------------------------------------------------
+; Funcao: INICIA_ALIENS - libera todos os slots de alien e todos os tiros;
+;                arma o primeiro atraso de spawn.
+; Entrada: Nenhuma.
+; Saida:   Libera slots das naves e tiros; inicializa ALIEN_ATRASO.
+; ---------------------------------------------------------------------
+INICIA_ALIENS proc
+    push AX
+    push BX
+    push BP
+    push DI
+
+    xor BX, BX               ; BX = slot*2 (acesso a ALIENS_*)
+    xor BP, BP               ; BP = slot*TAM_TIRO (acesso a TIROS_ALIENS)
+
+ia_loop:
+    mov word ptr ALIENS_ATIVO[BX], 0
+    mov DI, offset TIROS_ALIENS
+    add DI, BP
+    mov word ptr [DI + T_ATIVO], 0
+    add BX, 2
+    add BP, TAM_TIRO
+    cmp BX, NUM_ALIENS*2
+    jb  ia_loop
+
+    mov ALIEN_ATRASO, ALIEN_SPAWN_DELAY
+    mov ALIEN_HIT_FLAG, 0
+
+    pop DI
+    pop BP
+    pop BX
+    pop AX
+    ret
+INICIA_ALIENS endp
+
+; ---------------------------------------------------------------------
+; Funcao: CRIA_GRUPO_ALIENS - sorteia 1..3 aliens do mesmo tipo. O Y de cada
+; alien e' sorteado em [prev+30, 100 - (N-1-i)*30], garantindo dist
+; >= 30 px sem tentativa-e-erro.
+; Entrada: SEMENTE e grupo anterior inativo.
+; Saida:   Ativa slots da nova formacao e inicializa ALIEN_ATRASO.
+; ---------------------------------------------------------------------
+CRIA_GRUPO_ALIENS proc
+    push AX
+    push BX
+    push CX
+    push DX
+    push SI
+    push DI
+    push BP
+
+    ; Sorteia o tipo (0..2) do grupo
+    mov CX, 3
+    call ALEATORIO
+    mov SI, AX               ; SI = tipo (0..2)
+
+    ; Sorteia N (1..3)
+    mov CX, 3
+    call ALEATORIO
+    inc AX
+    mov BP, AX               ; BP = N
+
+    xor DI, DI               ; DI = I (0..N-1)
+    xor BX, BX               ; BX = I*2
+
+cga_loop:
+    ; min_y = (I==0) ? ALIEN_Y_MIN : ALIENS_Y[I-1] + ALIEN_DIST_MIN
+    test DI, DI
+    jz  cga_first
+    mov AX, ALIENS_Y[BX-2]
+    add AX, ALIEN_DIST_MIN
+    jmp cga_min_ready
+cga_first:
+    mov AX, ALIEN_Y_MIN
+cga_min_ready:
+    push AX                  ; guarda min_y (o mul sobrescreve DX)
+
+    mov AX, BP
+    sub AX, DI
+    dec AX                   ; AX = N-1-I
+    mov CX, ALIEN_DIST_MIN
+    mul CX                   ; AX = (N-1-I) * 30 (DX = 0)
+    ; Reserva ALIEN_DIST_MIN para cada nave que ainda falta posicionar.
+    mov CX, ALIEN_Y_MAX
+    sub CX, AX               ; CX = max_y
+
+    pop DX                   ; DX = min_y
+    sub CX, DX
+    inc CX                   ; CX = range = max_y - min_y + 1
+
+    call ALEATORIO           ; AX = 0..range-1 (preserva BX, DX, SI, DI, BP)
+    add AX, DX               ; AX = Y valido
+
+    mov ALIENS_Y[BX], AX
+    mov word ptr ALIENS_X[BX], LARG_TELA
+    mov word ptr ALIENS_ATIVO[BX], 1
+
+    mov AX, SI               ; tipo do grupo
+    mov ALIENS_TIPO[DI], AL  ; DI = I (byte-index)
+
+    add BX, 2
+    inc DI
+    cmp DI, BP
+    jb  cga_loop
+
+    mov ALIEN_ATRASO, ALIEN_SPAWN_DELAY
+
+    pop BP
+    pop DI
+    pop SI
+    pop DX
+    pop CX
+    pop BX
+    pop AX
+    ret
+CRIA_GRUPO_ALIENS endp
+
+; ---------------------------------------------------------------------
+; Funcao: ROLA_ALIENS - move todos os aliens ativos 1px para a esquerda; se o
+; grupo inteiro saiu/destruiu, conta atraso e cria o proximo grupo.
+; Entrada: Slots da formacao, ALIEN_ATRASO e ES = 0A000h.
+; Saida:   Atualiza e desenha o grupo ativo ou inicia um novo grupo.
+; ---------------------------------------------------------------------
+ROLA_ALIENS proc
+    push AX
+    push BX
+    push CX
+    push DX
+    push SI
+    push DI
+
+    ; Algum alien ativo?
+    xor BX, BX
+ra_check:
+    cmp word ptr ALIENS_ATIVO[BX], 0
+    jne ra_has_group
+    add BX, 2
+    cmp BX, NUM_ALIENS*2
+    jb  ra_check
+
+    dec ALIEN_ATRASO
+    jg  ra_fim
+    call CRIA_GRUPO_ALIENS
+    jmp ra_fim
+
+ra_has_group:
+    xor BX, BX
+
+ra_loop:
+    cmp word ptr ALIENS_ATIVO[BX], 0
+    je  ra_next
+
+    push BX                  ; guarda slot*2 (BX vira paleta em MOVER_SPRITE)
+    mov AX, ALIENS_X[BX]
+    mov ASCII_X, AX
+    mov AX, ALIENS_Y[BX]
+    mov ASCII_Y, AX
+
+    ; Seleciona a variacao do sprite: NAVES_SPRITE + tipo * TAM_NAVE
+    mov SI, BX
+    shr SI, 1                ; SI = slot
+    mov AL, ALIENS_TIPO[SI]
+    xor AH, AH
+    mov DX, TAM_NAVE
+    mul DX                   ; AX = tipo * TAM_NAVE
+    mov SI, offset NAVES_SPRITE
+    add SI, AX
+
+    mov BX, offset NAVE_PALETA
+    mov CX, LARGURA_NAVE
+    mov DX, ALTURA_NAVE
+    mov DI, MODO_SOME
+    mov FUNDO_COR, COR_FUNDO
+    mov AX, -VEL_ALIEN
+    call MOVER_SPRITE
+    pop BX
+
+    jc  ra_free              ; saiu pela esquerda
+    mov AX, ASCII_X
+    mov ALIENS_X[BX], AX
+    jmp ra_next
+
+ra_free:
+    mov word ptr ALIENS_ATIVO[BX], 0
+
+ra_next:
+    add BX, 2
+    cmp BX, NUM_ALIENS*2
+    jb  ra_loop
+
+ra_fim:
+    pop DI
+    pop SI
+    pop DX
+    pop CX
+    pop BX
+    pop AX
+    ret
+ROLA_ALIENS endp
+
+; ---------------------------------------------------------------------
+; Funcao: ATIRA_ALIENS - cada alien ativo dispara se o seu slot de tiro estiver
+; livre. So dispara com alien totalmente visivel (COPIA_FUNDO nao
+; recorta -- um disparo de fora da tela corromperia a VRAM).
+; Entrada: Slots das naves e tiros; ES = 0A000h.
+; Saida:   Ativa e desenha tiros novos em slots livres.
+; ---------------------------------------------------------------------
+ATIRA_ALIENS proc
+    push AX
+    push BX
+    push CX
+    push DX
+    push SI
+    push DI
+    push BP
+
+    xor BX, BX               ; slot*2
+    xor BP, BP               ; slot*TAM_TIRO
+
+atira_loop:
+    cmp word ptr ALIENS_ATIVO[BX], 0
+    jne atira_continue
+    jmp atira_next
+atira_continue:
+
+    mov AX, ALIENS_X[BX]
+    cmp AX, 0
+    jge atira_x_ok
+    jmp atira_next
+atira_x_ok:
+
+    add AX, LARGURA_NAVE
+    cmp AX, LARG_TELA
+    jle atira_x2_ok
+    jmp atira_next
+atira_x2_ok:
+
+    mov DI, offset TIROS_ALIENS
+    add DI, BP
+    cmp word ptr [DI + T_ATIVO], 0
+    je  atira_fire
+    jmp atira_next
+atira_fire:
+
+    ; X = centro horizontal do alien
+    mov AX, ALIENS_X[BX]
+    add AX, (LARGURA_NAVE - LARG_TIRO_ALIEN) / 2
+    mov [DI + T_X], AX
+
+    ; Y = logo abaixo do alien
+    mov AX, ALIENS_Y[BX]
+    add AX, ALTURA_NAVE + 1
+    mov [DI + T_Y], AX
+
+    mov word ptr [DI + T_ATIVO], 1
+
+    push BX
+    mov BX, DI
+    call DESENHA_TIRO
+    pop BX
+
+atira_next:
+    add BX, 2
+    add BP, TAM_TIRO
+    cmp BX, NUM_ALIENS*2
+    jb  atira_loop
+
+    pop BP
+    pop DI
+    pop SI
+    pop DX
+    pop CX
+    pop BX
+    pop AX
+    ret
+ATIRA_ALIENS endp
+
+; ---------------------------------------------------------------------
+; Funcao: ATUALIZA_TIROS_ALIENS - move todos os tiros alienigenas 1 passo para
+; baixo. Checa jipe ANTES de superficie (o jipe fica acima do chao;
+; se fosse o contrario, o tiro morreria na superficie sem vitimar).
+; Entrada: TIROS_ALIENS, JIPE_X, JIPE_Y, JIPE_ALT e ES = 0A000h.
+; Saida: CF = 1 se algum tiro acertou o jipe
+;          ALIEN_HIT_FLAG espelha o resultado lido pelo loop principal.
+; ---------------------------------------------------------------------
+ATUALIZA_TIROS_ALIENS proc
+    push AX
+    push BX
+    push CX
+    push DX
+    push SI
+    push DI
+    push BP
+
+    mov ALIEN_HIT_FLAG, 0
+
+    xor BX, BX               ; slot*2 (contador do loop)
+    xor BP, BP               ; slot*TAM_TIRO
+
+ata_loop:
+    mov DI, offset TIROS_ALIENS
+    add DI, BP
+
+    cmp word ptr [DI + T_ATIVO], 0
+    jne ata_process
+    jmp ata_next
+ata_process:
+
+    ; Restaura fundo sob o tiro
+    mov AX, [DI + T_X]
+    mov ASCII_X, AX
+    mov AX, [DI + T_Y]
+    mov ASCII_Y, AX
+    lea SI, [DI + T_FUNDO]
+    mov CX, [DI + T_LARG]
+    mov DX, [DI + T_ALT]
+    mov AL, 1
+    call COPIA_FUNDO
+
+    ; Move para baixo
+    mov AX, [DI + T_Y]
+    add AX, VEL_TIRO_ALIEN
+    mov [DI + T_Y], AX
+
+    ; ---- colisao horizontal com o jipe ----
+    mov CX, JIPE_X
+    add CX, LARGURA_JIPE
+    mov AX, [DI + T_X]
+    cmp AX, CX
+    jge ata_check_surface
+
+    mov DX, [DI + T_X]
+    add DX, [DI + T_LARG]
+    cmp DX, JIPE_X
+    jle ata_check_surface
+
+    ; ---- colisao vertical com o jipe ----
+    mov CX, JIPE_Y
+    sub CX, JIPE_ALT         ; jipe_top
+    mov AX, [DI + T_Y]
+    add AX, [DI + T_ALT]     ; shot_bottom
+    cmp AX, CX
+    jl  ata_check_surface
+
+    mov DX, JIPE_Y
+    sub DX, JIPE_ALT
+    add DX, ALTURA_JIPE      ; jipe_bottom
+    mov AX, [DI + T_Y]       ; shot_top
+    cmp AX, DX
+    jge ata_check_surface
+
+    ; Acertou o jipe
+    mov word ptr [DI + T_ATIVO], 0
+    mov ALIEN_HIT_FLAG, 1
+    jmp ata_next
+
+ata_check_surface:
+    mov AX, [DI + T_Y]
+    add AX, [DI + T_ALT]
+    cmp AX, Y_SUPERFICIE
+    jge ata_deactivate
+
+    ; Redesenha na nova posicao
+    mov AX, [DI + T_X]
+    mov ASCII_X, AX
+    mov AX, [DI + T_Y]
+    mov ASCII_Y, AX
+    push BX
+    mov BX, DI
+    call DESENHA_TIRO
+    pop BX
+    jmp ata_next
+
+ata_deactivate:
+    mov word ptr [DI + T_ATIVO], 0
+
+ata_next:
+    add BX, 2
+    add BP, TAM_TIRO
+    cmp BX, NUM_ALIENS*2
+    jae ata_done
+    jmp ata_loop
+
+ata_done:
+    cmp ALIEN_HIT_FLAG, 0
+    jne ata_ret_hit
+    clc
+    jmp ata_ret
+ata_ret_hit:
+    stc
+ata_ret:
+    pop BP
+    pop DI
+    pop SI
+    pop DX
+    pop CX
+    pop BX
+    pop AX
+    ret
+ATUALIZA_TIROS_ALIENS endp
+
+; ---------------------------------------------------------------------
+; Funcao: VERIFICA_TIRO_CIMA_ALIENS - checa colisao do TIRO_CIMA com aliens.
+; Ao acertar: consome o tiro e destroi o alien (+SCORE_ALIEN).
+; Deve ser chamada ANTES de ATUALIZA_TIRO (o ultimo passo, que atinge
+; T_LIM, ainda deve ser testado contra o alien).
+; Entrada: TIRO_CIMA, slots das naves e ES = 0A000h.
+; Saida:   Em acerto, remove tiro e nave e soma SCORE_ALIEN.
+; ---------------------------------------------------------------------
+VERIFICA_TIRO_CIMA_ALIENS proc
+    push AX
+    push BX
+    push CX
+    push DX
+    push SI
+    push DI
+
+    mov BX, offset TIRO_CIMA
+    cmp word ptr [BX + T_ATIVO], 0
+    jne vtca_continue
+    jmp vtca_fim
+vtca_continue:
+
+    xor DI, DI               ; DI = slot*2
+
+vtca_loop:
+    cmp word ptr ALIENS_ATIVO[DI], 0
+    je  vtca_next
+
+    ; ---- colisao horizontal ----
+    mov CX, ALIENS_X[DI]
+    add CX, LARGURA_NAVE
+    mov AX, [BX + T_X]
+    cmp AX, CX
+    jge vtca_next
+
+    mov DX, ALIENS_X[DI]
+    mov CX, [BX + T_X]
+    add CX, [BX + T_LARG]
+    cmp CX, DX
+    jle vtca_next
+
+    ; ---- colisao vertical ----
+    mov CX, ALIENS_Y[DI]
+    add CX, ALTURA_NAVE
+    mov AX, [BX + T_Y]
+    cmp AX, CX
+    jge vtca_next
+
+    mov DX, ALIENS_Y[DI]
+    mov CX, [BX + T_Y]
+    add CX, [BX + T_ALT]
+    cmp CX, DX
+    jle vtca_next
+
+    jmp vtca_hit
+
+vtca_next:
+    add DI, 2
+    cmp DI, NUM_ALIENS*2
+    jae vtca_fim
+    jmp vtca_loop
+
+vtca_hit:
+    ; Consome o tiro (devolve o fundo e marca inativo)
+    mov AX, [BX + T_X]
+    mov ASCII_X, AX
+    mov AX, [BX + T_Y]
+    mov ASCII_Y, AX
+    lea SI, [BX + T_FUNDO]
+    mov CX, [BX + T_LARG]
+    mov DX, [BX + T_ALT]
+    mov AL, 1
+    call COPIA_FUNDO
+    mov word ptr [BX + T_ATIVO], 0
+
+    ; Apaga o alien
+    mov AX, ALIENS_X[DI]
+    mov ASCII_X, AX
+    mov AX, ALIENS_Y[DI]
+    mov ASCII_Y, AX
+    mov AL, COR_FUNDO
+    mov CX, LARGURA_NAVE
+    mov DX, ALTURA_NAVE
+    call APAGAR_SPRITE
+    mov word ptr ALIENS_ATIVO[DI], 0
+
+    mov AX, SCORE_ALIEN
+    call SOMAR_SCORE
+
+vtca_fim:
+    pop DI
+    pop SI
+    pop DX
+    pop CX
+    pop BX
+    pop AX
+    ret
+VERIFICA_TIRO_CIMA_ALIENS endp
+
+; ---------------------------------------------------------------------
+; Funcao: DESENHA_CORACOES - desenha o sprite de coracoes correspondente a VIDAS.
+; Entrada: VIDAS de 1 a 3; ES = 0A000h.
+; Saida:   Icones desenhados na VRAM; altera ASCII_X e ASCII_Y.
+; ---------------------------------------------------------------------
+DESENHA_CORACOES proc
+    push BX
+    push CX
+    push DX
+    push SI
+
+    mov BL, VIDAS
+    xor BH, BH
+    dec BX
+    shl BX, 1                ; BX = (VIDAS-1) * 2
+    mov SI, CORACOES[BX]
+    mov CX, CORACAO_LARG[BX]
+    mov ASCII_X, X_CORACAO
+    mov ASCII_Y, Y_CORACAO
+    mov BX, offset COR_CORACAO
+    mov DX, ALTURA_CORACAO
+    call DESENHA_ASCII_PALETA
+
+    pop SI
+    pop DX
+    pop CX
+    pop BX
+    ret
+DESENHA_CORACOES endp
+
+; ---------------------------------------------------------------------
+; Funcao: DEC_CORACAO - remove uma vida e atualiza o desenho.
+; Entrada: VIDAS de 1 a 3; ES = 0A000h.
+; Saida: CF = 0 removeu; CF = 1 era a ultima vida
+;          No ultimo impacto, VIDAS permanece em 1 e o chamador encerra.
+; ---------------------------------------------------------------------
+DEC_CORACAO proc
+    cmp VIDAS, 1
+    ja  dec_remove
+    stc
+    ret
+
+dec_remove:
+    push AX
+    push CX
+    push DX
+
+    dec VIDAS
+    mov ASCII_X, X_CORACAO
+    mov ASCII_Y, Y_CORACAO
+    mov AL, COR_FUNDO
+    mov CX, CORACAO_LARG[4]  ; largura maxima (3 coracoes)
+    mov DX, ALTURA_CORACAO
+    call PREENCHER_LINHAS    ; apaga o desenho atual
+    call DESENHA_CORACOES
+
+    pop DX
+    pop CX
+    pop AX
+    clc
+    ret
+DEC_CORACAO endp
+
+; ---------------------------------------------------------------------
+; Funcao: DESENHA_SCORE - redesenha "SCORE nnnn" na barra de status.
+; Entrada: ES = 0A000H
+; Saida:   Texto do score redesenhado na VRAM; altera ASCII_X e ASCII_Y.
+; ---------------------------------------------------------------------
+DESENHA_SCORE proc
+    push AX
+    push CX
+    push DX
+    push SI
+    push DI
+
+    mov ASCII_X, X_SCORE
+    mov ASCII_Y, Y_SCORE
+    mov AL, COR_FUNDO
+    mov CX, 10 * LARGURA_GLIFO
+    mov DX, ALTURA_GLIFO
+    call PREENCHER_LINHAS    ; apaga area
+
+    mov DI, offset COR_BOTAO
+    mov CX, LARGURA_GLIFO
+    mov DX, ALTURA_GLIFO
+    mov SI, offset TXT_SCORE
+    call ESCREVER_TEXTO
+    mov SI, offset SCORE_TEXTO
+    call ESCREVER_TEXTO
+
+    pop DI
+    pop SI
+    pop DX
+    pop CX
+    pop AX
+    ret
+DESENHA_SCORE endp
+
+; ---------------------------------------------------------------------
+; Funcao: SOMAR_SCORE - soma um valor a SCORE_TEXTO (max 9999) e atualiza
+; a barra de status.
+; Entrada: AX = valor a somar; ES = 0A000H
+; Saida:   SCORE_TEXTO atualizado e redesenhado na barra.
+; ---------------------------------------------------------------------
+SOMAR_SCORE proc
+    push AX
+    push BX
+    push CX
+    push DX
+    push SI
+
+    mov SI, AX               ; SI = incremento
+    xor AX, AX
+    xor BX, BX
+
+soma_le:                     ; AX = numero lido dos 4 digitos
+    mov CX, 10
+    mul CX
+    mov CL, SCORE_TEXTO[BX]
+    sub CL, '0'
+    xor CH, CH
+    add AX, CX
+    inc BX
+    cmp BX, 4
+    jb  soma_le
+
+    add AX, SI
+    cmp AX, 9999
+    jbe soma_converte
+    mov AX, 9999
+
+soma_converte:
+    mov BX, 3                ; escreve do menos significativo
+    mov CX, 10
+
+soma_escreve:
+    xor DX, DX
+    div CX
+    add DL, '0'
+    mov SCORE_TEXTO[BX], DL
+    dec BX
+    jns soma_escreve
+
+    call DESENHA_SCORE
+
+    pop SI
+    pop DX
+    pop CX
+    pop BX
+    pop AX
+    ret
+SOMAR_SCORE endp
+
+; ---------------------------------------------------------------------
+; Funcao: EXIBE_STATUS - desenha coracoes, score e relogio com o tempo atual.
+; Entrada: VIDAS, SCORE_TEXTO, TEMPO_TEXTO e ES = 0A000h.
+; Saida:   Coracoes, score e relogio desenhados; altera ASCII_X e ASCII_Y.
+; ---------------------------------------------------------------------
+EXIBE_STATUS proc
+    call DESENHA_CORACOES
+    call DESENHA_SCORE
+
+    mov ASCII_X, 290
+    mov ASCII_Y, 5
+    mov SI, offset RELOGIO_SPRITE
+    mov BX, offset COR_RELOGIO
+    mov CX, LARGURA_RELOGIO
+    mov DX, ALTURA_RELOGIO
+    call DESENHA_ASCII_PALETA
+
+    add ASCII_X, 10
+    add ASCII_Y, 1
+    mov SI, offset TEMPO_TEXTO
+    mov DI, offset COR_TEMPO
+    mov CX, 6
+    mov DX, 8
+    call ESCREVER_TEXTO
+    ret
+EXIBE_STATUS endp
+
+; ---------------------------------------------------------------------
+; Funcao: ATUALIZA_SALTO - avanca 1 quadro do salto trapezoidal.
+; Fases:
+;   0 = chao
+;   1 = subindo   (SALTO_VEL px por quadro ate SALTO_ALTURA)
+;   2 = topo      (altura constante enquanto acumula SALTO_TOPO_PX)
+;   3 = descendo  (SALTO_VEL px por quadro ate o chao)
+; Entrada: JIPE_ALT, SALTO_FASE, SALTO_PX e VEL_CHAO.
+; Saida:   Atualiza JIPE_ALT, SALTO_FASE e SALTO_PX; pode alterar AX.
+; ---------------------------------------------------------------------
+ATUALIZA_SALTO proc
+    cmp SALTO_FASE, 0
+    je  salto_fim
+    cmp SALTO_FASE, 2
+    je  salto_topo
+    ja  salto_descida
+
+    ; fase 1: subindo
+    mov AX, JIPE_ALT
+    add AX, SALTO_VEL
+    cmp AX, SALTO_ALTURA
+    jl  salto_grava
+    mov AX, SALTO_ALTURA
+    mov SALTO_FASE, 2
+    mov SALTO_PX, 0
+    jmp salto_grava
+
+salto_topo:
+    ; fase 2: mantem a altura e acumula o passo do cenario
+    add SALTO_PX, VEL_CHAO
+    cmp SALTO_PX, SALTO_TOPO_PX
+    jb  salto_fim
+    mov SALTO_FASE, 3
+    jmp salto_fim
+
+salto_descida:
+    ; fase 3: descendo
+    mov AX, JIPE_ALT
+    sub AX, SALTO_VEL
+    jg  salto_grava
+    xor AX, AX
+    mov SALTO_FASE, 0
+
+salto_grava:
+    mov JIPE_ALT, AX
+
+salto_fim:
+    ret
+ATUALIZA_SALTO endp
+
+; ---------------------------------------------------------------------
+; Funcao: MOVER_JIPE - apaga, aplica deslocamento horizontal (limitado), avanca
+; o salto e redesenha.
+; Entrada: AX = deslocamento horizontal (com sinal); ES = 0A000H
+; Saida:   Atualiza JIPE_X e salto; redesenha o jipe e altera ASCII_X/Y.
+; ---------------------------------------------------------------------
+MOVER_JIPE proc
+    push AX
+    push BX
+    push CX
+    push DX
+    push SI
+
+    push AX
+
+    mov AX, JIPE_X
+    mov ASCII_X, AX
+    mov AX, JIPE_Y
+    sub AX, JIPE_ALT
+    mov ASCII_Y, AX
+    mov AL, FUNDO_COR
+    mov CX, LARGURA_JIPE
+    mov DX, ALTURA_JIPE
+    call APAGAR_SPRITE
+
+    pop AX
+    mov BX, JIPE_X
+    add BX, AX
+    cmp BX, 0
+    jl  jipe_bloqueado
+    cmp BX, X_MAX_JIPE
+    jg  jipe_bloqueado
+    mov JIPE_X, BX
+
+jipe_bloqueado:
+    call ATUALIZA_SALTO
+
+    mov AX, JIPE_X
+    mov ASCII_X, AX
+    mov AX, JIPE_Y
+    sub AX, JIPE_ALT
+    mov ASCII_Y, AX
+    mov SI, offset JIPE_SPRITE
+    mov BX, offset JIPE_PALETA
+    mov CX, LARGURA_JIPE
+    mov DX, ALTURA_JIPE
+    call DESENHA_SPRITE_RECORTADO
+
+    pop SI
+    pop DX
+    pop CX
+    pop BX
+    pop AX
+    ret
+MOVER_JIPE endp
+
+; ---------------------------------------------------------------------
+; Funcao: NOVO_JOGO - restaura vidas, score, tempo e referencia de ticks.
+; Entrada: Nenhuma.
+; Saida:   Reinicializa vidas, score, segundos e referencia de ticks.
+; ---------------------------------------------------------------------
+NOVO_JOGO proc
+    mov VIDAS, 3
+    mov TICKS_REFERENCIA, 0
+    mov SCORE_TEXTO[0], '0'
+    mov SCORE_TEXTO[1], '0'
+    mov SCORE_TEXTO[2], '0'
+    mov SCORE_TEXTO[3], '0'
+    mov SEGUNDOS_RESTANTES, 60
+    mov TEMPO_TEXTO[0], '6'
+    mov TEMPO_TEXTO[1], '0'
+    ret
+NOVO_JOGO endp
+
+; ---------------------------------------------------------------------
+; Funcao: MENU_INICIAL - desenha o titulo e entra no loop de selecao.
+; Entrada: ES = 0A000h.
+; Saida:   Menu exibido; OPCAO_SEL contem a opcao confirmada.
+; ---------------------------------------------------------------------
+MENU_INICIAL proc
+    push AX
+    push CX
+    push DX
+    push SI
+
+    mov DI, offset COR_TITULO
+    mov ASCII_X, X_INICIAL_TITULO
+    mov ASCII_Y, Y_INICIAL_TITULO
+    mov CX, LARGURA_TITULO
+    mov DX, ALTURA_TITULO
+    mov SI, offset TITULO_JOGO
+    call ESCREVER_TEXTO
+
+    xor AX, AX               ; so desenha (nao move)
+    call MOVER_SPRITES_MENU
+
+    call DESENHAR_BOTOES
+
+    pop SI
+    pop DX
+    pop CX
+    pop AX
+    ret
+MENU_INICIAL endp
+
+; ---------------------------------------------------------------------
+; Funcao: DESENHAR_BOTOES - desenha os botoes, anima os sprites enquanto espera
+; e atualiza OPCAO_SEL conforme as setas.
+; Entrada: BOTOES_TXT, BOTOES_Y, OPCAO_SEL e ES = 0A000h.
+; Saida:   OPCAO_SEL contem a opcao confirmada pelo Enter.
+; ---------------------------------------------------------------------
+DESENHAR_BOTOES proc
+    push AX
+    push BX
+    push CX
+    push DX
+    push SI
+    push DI
+    push BP
+
+botoes_redesenha:
+    xor BP, BP               ; BP = indice da opcao
+
+botoes_proximo:
+    mov DI, offset COR_BOTAO
+    mov AX, BP
+    cmp AL, OPCAO_SEL
+    jne botoes_cor
+    mov DI, offset COR_SELEC
+
+botoes_cor:
+    mov BX, BP
+    shl BX, 1
+    mov SI, BOTOES_TXT[BX]
+    mov DX, BOTOES_Y[BX]
+    mov BTN_TXT, SI
+    mov BTN_Y, DX
+
+    xor CX, CX               ; conta caracteres
+    mov BX, SI
+botoes_conta:
+    cmp byte ptr [BX], 0
+    je  botoes_fim_conta
+    inc BX
+    inc CX
+    jmp botoes_conta
+
+botoes_fim_conta:
+    mov AX, CX
+    add AX, 4
+    mov BX, LARGURA_GLIFO
+    mul BX                   ; AX = largura total em px
+    mov BX, AX
+    mov AX, LARG_TELA
+    sub AX, BX
+    shr AX, 1                ; AX = X centralizado
+    mov BTN_X, AX
+
+    add CX, 2
+    mov AX, BTN_X
+    mov ASCII_X, AX
+    mov AX, BTN_Y
+    mov ASCII_Y, AX
+    call DESENHAR_CAIXA
+
+    mov AX, BTN_X
+    add AX, 2 * LARGURA_GLIFO
+    mov ASCII_X, AX
+    mov AX, BTN_Y
+    add AX, ALTURA_GLIFO
+    mov ASCII_Y, AX
+    mov CX, LARGURA_GLIFO
+    mov DX, ALTURA_GLIFO
+    mov SI, BTN_TXT
+    call ESCREVER_TEXTO
+
+    inc BP
+    cmp BP, NUM_OPCOES
+    jae botoes_tecla
+    jmp botoes_proximo
+
+botoes_tecla:
+    call ESPERA_RETRACO
+    mov AX, 2
+    call MOVER_SPRITES_MENU
+
+    mov AH, 01H
+    int 16H                  ; tecla disponivel?
+    jz  botoes_tecla
+    mov AH, 00H
+    int 16H
+    cmp AH, 48H              ; seta para cima
+    je  botoes_cima
+    cmp AH, 50H              ; seta para baixo
+    je  botoes_baixo
+    cmp AL, 13               ; Enter
+    je  botoes_enter
+    jmp botoes_tecla
+
+botoes_cima:
+    cmp OPCAO_SEL, 0
+    je  botoes_tecla
+    dec OPCAO_SEL
+    jmp botoes_redesenha
+
+botoes_baixo:
+    cmp OPCAO_SEL, NUM_OPCOES - 1
+    jae botoes_tecla
+    inc OPCAO_SEL
+    jmp botoes_redesenha
+
+botoes_enter:
+    pop BP
+    pop DI
+    pop SI
+    pop DX
+    pop CX
+    pop BX
+    pop AX
+    ret
+DESENHAR_BOTOES endp
+
+; ---------------------------------------------------------------------
+; Funcao: GAME_OVER - tela de fim de jogo com score; aguarda uma tecla.
+; Entrada: SCORE_TEXTO com a pontuacao final.
+; Saida:   Exibe a tela final e retorna apos uma tecla.
+; ---------------------------------------------------------------------
+GAME_OVER proc
+    call LIMPAR_TELA
+
+    mov DI, offset COR_GAMEOVER
+    mov ASCII_X, X_INICIAL_TITULO
+    add ASCII_X, 70          ; desloca o titulo (mais largo)
+    mov ASCII_Y, Y_INICIAL_TITULO
+    mov CX, LARGURA_GAMEOVER
+    mov DX, ALTURA_GAMEOVER
+    mov SI, offset TITULO_GAMEOVER
+    call ESCREVER_TEXTO
+
+    mov ASCII_X, 50
+    mov ASCII_Y, 170
+    mov CX, LARGURA_GLIFO
+    mov DX, ALTURA_GLIFO
+    mov SI, offset TXT_GAMEOVER
+    call ESCREVER_TEXTO
+
+    mov DI, offset COR_SCORE
+    mov ASCII_X, 135
+    mov ASCII_Y, 120
+    mov CX, LARGURA_GLIFO
+    mov DX, ALTURA_GLIFO
+    mov SI, offset TXT_SCORE
+    call ESCREVER_TEXTO
+    mov SI, offset SCORE_TEXTO
+    call ESCREVER_TEXTO
+
+    mov AH, 00H
+    int 16H                  ; espera tecla
+    ret
+GAME_OVER endp
+
+; ---------------------------------------------------------------------
+; Funcao: INICIA_JOGO - loop principal da partida.
+; Entrada: Vidas, score e tempo inicializados por NOVO_JOGO.
+; Saida:   Retorna ao terminar o tempo, perder a ultima vida ou pressionar Esc.
+; ---------------------------------------------------------------------
+INICIA_JOGO proc
+inicio_jogo:                 ; reinicio apos colisao
+    call LIMPAR_TELA
+    mov JIPE_X, 10
+    mov word ptr TIRO_CIMA[T_ATIVO], 0
+    mov word ptr TIRO_FRENTE[T_ATIVO], 0
+    mov JIPE_ALT, 0
+    mov SALTO_FASE, 0
+
+    call EXIBE_STATUS
+    call INICIA_CRATERAS
+    call INICIA_ROCHAS
+    call INICIA_ALIENS          
+
+    ; Desenha o cenario
+    mov ASCII_X, 0
+    mov ASCII_Y, Y_LONGE
+    mov SI, offset TERRENO_LONGE_SPRITE
+    mov BX, offset TERRENO_LONGE_PALETA
+    mov CX, LARG_TELA
+    mov DX, LINHAS_BITMAP_TERRENO
+    call DESENHA_ASCII_PALETA
+
+    add ASCII_Y, LINHAS_BITMAP_TERRENO
+    mov AL, [TERRENO_LONGE_PALETA + 1]
+    mov CX, LARG_TELA
+    mov DX, PREENCHE_LONGE
+    call PREENCHER_LINHAS
+
+    mov ASCII_X, 0
+    mov ASCII_Y, Y_PERTO
+    mov SI, offset TERRENO_PERTO_SPRITE
+    mov BX, offset TERRENO_PERTO_PALETA
+    mov CX, LARG_TELA
+    mov DX, LINHAS_BITMAP_TERRENO
+    call DESENHA_ASCII_PALETA
+
+    add ASCII_Y, LINHAS_BITMAP_TERRENO
+    mov AL, [TERRENO_PERTO_PALETA + 1]
+    mov CX, LARG_TELA
+    mov DX, PREENCHE_PERTO
+    call PREENCHER_LINHAS
+
+    mov ASCII_Y, Y_SUPERFICIE
+    mov AL, COR_SUPERFICIE
+    mov CX, LARG_TELA
+    mov DX, ALTURA_SUPERFICIE
+    call PREENCHER_LINHAS
+
+    mov ASCII_X, 10
+    sub ASCII_Y, ALTURA_JIPE
+    mov SI, offset JIPE_SPRITE
+    mov BX, offset JIPE_PALETA
+    mov CX, LARGURA_JIPE
+    mov DX, ALTURA_JIPE
+    call DESENHA_ASCII_PALETA
+
+    mov AH, 00H
+    int 1AH
+    mov TICKS_REFERENCIA, DX
+
+jogo_loop:
+    call ESPERA_RETRACO
+
+    mov BX, offset TIRO_FRENTE
+    call VERIFICA_TIRO_ROCHAS
+    call VERIFICA_TIRO_CIMA_ALIENS   ; usa TIRO_CIMA internamente e preserva BX
+
+    mov BX, offset TIRO_CIMA
+    call ATUALIZA_TIRO
+    mov BX, offset TIRO_FRENTE
+    call ATUALIZA_TIRO
+    call ATUALIZA_TIROS_ALIENS       ; define ALIEN_HIT_FLAG
+
+    call ROLA_CRATERAS
+    call ROLA_ROCHAS
+    call ROLA_ALIENS
+    call ATIRA_ALIENS
+
+    call VERIFICA_SALTO_CRATERAS
+    jc  colidiu
+    call VERIFICA_ROCHAS
+    jc  colidiu
+    cmp ALIEN_HIT_FLAG, 0
+    je  sem_colisao                  ; nenhum tiro alienigena acertou o jipe
+
+colidiu:
+    call DEC_CORACAO
+    jnc reinicia_jogo
+    jmp jogo_fim
+
+reinicia_jogo:
+    mov CX, 40               ; ~0,7s de pausa
+pausa_colisao:
+    call ESPERA_RETRACO
+    loop pausa_colisao
+    jmp inicio_jogo
+
+sem_colisao:
+    call CONTAGEM_TEMPO
+    cmp AL, 1
+    jne verifica_teclado
+    cmp SEGUNDOS_RESTANTES, 0
+    je  jogo_fim
+    call ATUALIZA_TEMPO
+
+verifica_teclado:
+    mov AH, 01H
+    int 16H                  ; tecla disponivel?
+    jz  atualiza_jipe
+    mov AH, 00H
+    int 16H
+    cmp AL, 1BH              ; Esc
+    jne verifica_espaco
+    jmp jogo_fim
+
+verifica_espaco:
+    cmp AL, 20H              ; espaco: atira
+    jne verifica_salto
+    call DISPARAR
+
+verifica_salto:
+    cmp AH, 48H              ; seta para cima: salta
+    jne atualiza_jipe
+    cmp SALTO_FASE, 0
+    jne atualiza_jipe
+    mov SALTO_FASE, 1
+
+atualiza_jipe:
+    mov JIPE_VEL, 0
+    cmp TECLA_ESQ, 1
+    jne verifica_direita
+    mov JIPE_VEL, -1
+
+verifica_direita:
+    cmp TECLA_DIR, 1
+    jne move_jipe
+    mov JIPE_VEL, 2
+
+move_jipe:
+    ; Sem entrada lateral, JIPE_VEL fica em zero. O patamar do
+    ; salto continua avancando pelo passo do cenario.
+    cmp JIPE_VEL, 0
+    jne move_jipe_exec
+    cmp SALTO_FASE, 0
+    je  jogo_volta           ; parado no chao: nada a redesenhar
+
+move_jipe_exec:
+    mov AL, [TERRENO_PERTO_PALETA + 1]
+    mov FUNDO_COR, AL
+    mov AX, JIPE_VEL
+    call MOVER_JIPE
+
+jogo_volta:
+    jmp jogo_loop
+
+jogo_fim:
+    ret
+INICIA_JOGO endp
+
+; ---------------------------------------------------------------------
+; start: entrypoint. Configura segmentos, instala handler de teclado,
+; alterna entre menu e partidas ate o jogador escolher "Sair".
+; ---------------------------------------------------------------------
 start:
     mov AX, @data
     mov DS, AX
-    
-    mov AX, 0A000H
-    mov ES, AX          ;Endere?o base do modo de v?deo
-    
-    call MODO_VIDEO
-    
-    mov SI, offset GAME_TITLE
-    mov CX, 20
-    mov DX, 50
-    call DESENHA_ASCII
 
-    call FINALIZA
+    mov AX, 0A000H
+    mov ES, AX
+    cld
+
+    mov AX, 3509H            ; salva handler anterior da INT 09h
+    int 21H
+    mov OLD_INT09_OFF, BX
+    mov OLD_INT09_SEG, ES
+
+    push DS
+    mov DX, offset TRATA_TECLADO
+    mov AX, SEG TRATA_TECLADO
+    mov DS, AX
+    mov AX, 2509H            ; instala TRATA_TECLADO
+    int 21H
+    pop DS
+
+    call MODO_VIDEO
+
+menu:
+    call LIMPAR_TELA
+    call MENU_INICIAL
+    cmp OPCAO_SEL, 0
+    jne fim_programa         ; 1 = Sair
+    call INICIA_ALEATORIO
+    call NOVO_JOGO
+    call INICIA_JOGO
+    call GAME_OVER
+    jmp menu
+
+fim_programa:
+    mov AX, 0003H            ; volta ao modo texto
+    int 10H
+    mov AX, 4C00H
+    int 21H                  ; encerra
+
 end start
