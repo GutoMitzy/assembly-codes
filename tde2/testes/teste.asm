@@ -29,34 +29,31 @@ TITULO_GAMEOVER db "   _____          __  __ ______ ", 13, 10
                 db 0     
 
                 ;1coracao
-CORACAO1_SPRITE db"0011001100"
-                db"0011001100"
-                db"1111111111"
-                db"1111111111"
-                db"1111111111"
-                db"1111111111"
-                db"0011111100"
-                db"0011111100"
-                db"0011111100"
-                db"0011111100"
-                db"0000110000"
-                db"0000110000"
+CORACAO1_SPRITE db "001100110000000000"
+                db "111111111100000000"
+                db "111111111100000000"
+                db "111111111100000000"
+                db "111111111100000000"
+                db "001111110000000000"
+                db "001111110000000000"
+                db "001111110000000000"
+                db "001111110000000000"
+                db "000011000000000000"
+                db "000011000000000000"
                 ;2coracoes
-CORACAO2_SPRITE db "00110011001100"
-                db "00110011001100"
-                db "11001111111111"
-                db "11001111111111"
-                db "11001111111111"
-                db "11001111111111"
-                db "00110011111100"
-                db "00110011111100"
-                db "00110011111100"
-                db "00110011111100"
-                db "00001100110000"
-                db "00001100110000"
+CORACAO2_SPRITE db "001100110011000000"
+                db "110011111111110000"
+                db "110011111111110000"
+                db "110011111111110000"
+                db "110011111111110000"
+                db "001100111111000000"
+                db "001100111111000000"
+                db "001100111111000000"
+                db "001100111111000000"
+                db "000011001100000000"
+                db "000011001100000000"
                 ;3coracoes
 CORACAO3_SPRITE db "001100110011001100"
-                db "001100110011001100"
                 db "110011001111111111"
                 db "110011001111111111"
                 db "110011001111111111"
@@ -1010,9 +1007,9 @@ OPCAO_SEL        db 0                 ; indice da opcao selecionada no menu
 ; ============================================================
 CORACOES         dw offset CORACAO1_SPRITE, offset CORACAO2_SPRITE, offset CORACAO3_SPRITE
                  ; ponteiros para sprites de 1, 2 e 3 coracoes
-CORACAO_LARG     dw 10, 14, 18        ; largura de cada variacao de coracoes
-ALTURA_CORACAO   equ 12               ; altura das variacoes de coracoes
-VIDAS            db 3                 ; vidas restantes (1 a 3)
+LARGURA_CORACAO   equ 18               ; quadro comum as tres variacoes
+ALTURA_CORACAO   equ 11               ; altura das variacoes de coracoes
+VIDAS            db 3                 ; vidas restantes (0 a 3)
 X_CORACAO        equ 5                ; X fixo do desenho de coracoes
 Y_CORACAO        equ 5                ; Y fixo do desenho de coracoes
 
@@ -1064,7 +1061,7 @@ ALCANCE_TIRO     equ 50               ; alcance do tiro frontal (px)
 CANHAO_CIMA_X    equ 12               ; X do canhao superior no sprite do jipe
 CANHAO_FRENTE_Y  equ 4                ; Y do canhao frontal no sprite do jipe
 
-; Layout do registro de tiro (words + buffer de fundo)
+; Layout do registro de tiro (nove words por projetil)
 T_ATIVO          equ 0                ; 0 = livre, 1 = em voo
 T_X              equ 2                ; X atual
 T_Y              equ 4                ; Y atual
@@ -1073,13 +1070,11 @@ T_DX             equ 8                ; deslocamento X por quadro
 T_DY             equ 10               ; deslocamento Y por quadro
 T_LARG           equ 12               ; largura do tiro
 T_ALT            equ 14               ; altura do tiro
-T_FUNDO          equ 18               ; buffer de 8 bytes com o fundo salvo
-TAM_TIRO equ T_FUNDO + 8            ; = 26 bytes por registro de tiro (reutiliza o layout)
+TAM_TIRO         equ T_COR + 2        ; nove words por registro
 
 TIRO_CIMA        dw 0, 0, 0, Y_LIMITE_TIRO, 0, -VEL_TIRO_CIMA, LARG_TIRO_CIMA, ALT_TIRO_CIMA, COR_TIRO_CIMA
-                 db 8 dup(0)
+
 TIRO_FRENTE      dw 0, 0, 0, 0, VEL_TIRO_FRENTE, 0, LARG_TIRO_FRENTE, ALT_TIRO_FRENTE, COR_TIRO_FRENTE
-                 db 8 dup(0)
 
 ; ============================================================
 ; TERRENO
@@ -1087,11 +1082,10 @@ TIRO_FRENTE      dw 0, 0, 0, 0, VEL_TIRO_FRENTE, 0, LARG_TIRO_FRENTE, ALT_TIRO_F
 ALTURA_SUPERFICIE equ 7               ; altura da faixa de superficie
 Y_SUPERFICIE      equ ALT_TELA - ALTURA_SUPERFICIE  ; Y do topo da superficie
 
-ALTURA_REGIAO     equ 95              ; altura da regiao montanhosa
 LINHAS_ASCII      equ 42              ; linhas do bitmap de terreno
 ALTURA_TERRENO    equ 60              ; altura do terreno perto
 
-Y_REGIAO          equ ALT_TELA - ALTURA_REGIAO      ; Y do topo da regiao
+Y_REGIAO          equ 100                           ; primeira linha das montanhas
 Y_LONGE           equ Y_REGIAO                      ; Y do terreno longe
 Y_PERTO           equ ALT_TELA - ALTURA_TERRENO     ; Y do terreno perto
 
@@ -1105,8 +1099,8 @@ PREENCHE_PERTO    equ ALT_TELA - (Y_PERTO + LINHAS_ASCII)
 ; ============================================================
 NUM_ALIENS        equ 3
 ALIEN_Y_MIN       equ 15             ; faixa Y de spawn
-ALIEN_Y_MAX       equ 100
-ALIEN_DIST_MIN    equ 30             ; espacamento minimo vertical entre naves do grupo
+ALIEN_Y_MAX       equ Y_REGIAO - ALTURA_NAVE
+ALIEN_DIST_MIN    equ 30             ; espaco horizontal livre entre duas naves
 VEL_ALIEN         equ 1              ; px/quadro (esquerda)
 SCORE_ALIEN       equ 100
 ALIEN_SPAWN_DELAY equ 30             ; quadros entre grupos (~0,5s)
@@ -1121,19 +1115,20 @@ ALIENS_Y      dw NUM_ALIENS dup(0)   ; Y fixo de cada alien
 ALIENS_ATIVO  dw NUM_ALIENS dup(0)   ; 0 = slot livre
 ALIENS_TIPO   db NUM_ALIENS dup(0)   ; 0..2: qual variacao de NAVES_SPRITE
 ALIEN_ATRASO  dw 0                   ; quadros ate criar o proximo grupo
+CRATERA_GERADA db 0                  ; libera rochas depois da primeira cratera
 ALIEN_HIT_FLAG db 0                  ; 1 = algum tiro alien acertou o jipe
 
 ; Bloco contiguo de NUM_ALIENS registros (mesmo layout de TIRO_CIMA/FRENTE)
 TIROS_ALIENS  dw 0,0,0,0,0, VEL_TIRO_ALIEN, LARG_TIRO_ALIEN, ALT_TIRO_ALIEN, COR_TIRO_ALIEN
-              db 8 dup(0)
+
               dw 0,0,0,0,0, VEL_TIRO_ALIEN, LARG_TIRO_ALIEN, ALT_TIRO_ALIEN, COR_TIRO_ALIEN
-              db 8 dup(0)
+
               dw 0,0,0,0,0, VEL_TIRO_ALIEN, LARG_TIRO_ALIEN, ALT_TIRO_ALIEN, COR_TIRO_ALIEN
-              db 8 dup(0)
 
 ; ============================================================
 ; ROLAGEM
 ; ============================================================
+ORIGEM_LUA        dw 0                ; coluna do panorama na borda esquerda
 VEL_CHAO          equ 1               ; pixels de rolagem por quadro
 
 ; ============================================================
@@ -1149,16 +1144,13 @@ ROCHA_LIVRE       equ 8000H           ; marca de slot vazio
 DIST_MIN_ROCHA    equ 110             ; distancia minima entre rochas (px)
 DIST_VAR_ROCHA    equ 100             ; variacao aleatoria adicional (0..99)
 DIST_ENTRE_OBST   equ 100             ; espaco livre exigido na borda direita
-MARGEM_ROCHA      equ 3               ; margem da rocha na colisao
-ALT_LIVRE_ROCHA   equ 6               ; altura minima do jipe para passar
 SCORE_ROCHA       equ 50              ; pontos por rocha ultrapassada no ar
 FLAG_ATINGIDA     equ 20H             ; bit: rocha 4 ja levou 1o disparo
-MARGEM_JIPE_ROCHA equ 4               ; margem do jipe na colisao com rocha
 
 ROCHAS_X          dw NUM_ROCHAS dup(ROCHA_LIVRE)  ; X de cada rocha
 ROCHAS_TIPO       db NUM_ROCHAS dup(0)            ; tipo + flags de cada rocha
 ROCHA_PROX        dw 0                            ; px ate criar a proxima rocha
-PASSO_CHAO        dw VEL_CHAO                     ; passo de rolagem (equivale a VEL_CHAO)
+
 
 ; ============================================================
 ; CRATERAS
@@ -1169,7 +1161,7 @@ TAM_CRATERA       equ LARGURA_CRATERA * ALTURA_CRATERA  ; bytes por cratera (98)
 
 NUM_CRATERAS      equ 3               ; quantidade de slots de cratera
 CRATERA_LIVRE     equ 8000H           ; marca de slot vazio
-DIST_MIN_CRATERA  equ 150             ; distancia minima entre crateras (px)
+DIST_MIN_CRATERA  equ 150 + LARGURA_CRATERA             ; distancia minima entre crateras (px)
 DIST_VAR_CRATERA  equ 100             ; variacao aleatoria adicional (0..99)
 
 CRATERAS_X        dw NUM_CRATERAS dup(CRATERA_LIVRE)  ; X de cada cratera
@@ -1202,24 +1194,25 @@ SCORE_CRATERA     equ 50              ; pontos por cratera saltada
 X_SCORE           equ 135             ; X do score centralizado
 Y_SCORE           equ 8               ; Y do score na barra de status
 
-TEMPO_INICIAL     dw 60               ; segundos restantes
+DURACAO_JOGO      equ 60               ; segundos (1..99 no mostrador)
+VEL_JIPE          equ 2                ; pixels por quadro, em ambos os sentidos
+RETRACOS_POR_PASSO equ 1               ; intervalo de movimento (1 ou mais retracos)
+VEL_MENU          equ 2
+PAUSA_COLISAO_Q   equ 40               ; duracao da pausa em quadros
+FRACAO_SEGUNDO    equ 18207            ; ticks BIOS por segundo, em milesimos
+TEMPO_FRACAO      dw 0
+TEMPO_INICIAL     dw DURACAO_JOGO               ; segundos restantes
 TEMPO_DECORRIDO   dw 0                ; ticks do BIOS como referencia
-TEMPO_TEXTO       db "60", 0          ; tempo como string de 2 digitos
-
-; ============================================================
-; INTERRUPCAO DE TECLADO
-; ============================================================
-OLD_INT09_OFF     dw 0                ; offset do handler anterior da INT 09h
-OLD_INT09_SEG     dw 0                ; segmento do handler anterior
+TEMPO_TEXTO       db "00", 0          ; tempo como string de 2 digitos
 
 ; ============================================================
 ; FONTE
 ; ============================================================
 
 ; FONTE_CHARS mapeia ASCII -> indice do glifo para ASCII_PARA_INDICE.
-; Indices 10..15 sao glifos de moldura e nao tem ASCII correspondente (0).
+; Indices 10..15 sao glifos de moldura da pagina de codigo do DOS.
 FONTE_CHARS db ' ', 27H, '`', '(', ')', '/', '\', '_', '|', ','
-            db 0, 0, 0, 0, 0, 0
+            db 218, 191, 192, 217, 196, 179
             db 'J', 'O', 'G', 'A', 'R', 'S', 'I', 'P', 'E', 'N', 'Q', 'U', 'L', 'T', 'C', '.'
             db '0', '1', '2', '3', '4', '5', '6', '7', '8', '9'
             
@@ -1271,28 +1264,49 @@ FONTE_GLYPHS label byte
     db 0CH, 12H, 12H, 0CH, 12H, 12H, 0CH, 00H   ; 40 8
     db 0CH, 12H, 12H, 0EH, 02H, 02H, 0CH, 00H   ; 41 9
     
+; Segmentos separados mantem cada buffer dentro do limite de 64 KiB.
+QUADRO_RAM segment para private 'FAR_DATA'
+PIXELS_QUADRO db LARG_TELA * ALT_TELA dup (?)
+QUADRO_RAM ends
+PANORAMA_RAM segment para private 'FAR_DATA'
+PIXELS_LUA db LARG_TELA * (ALT_TELA - Y_REGIAO) dup (?)
+PANORAMA_RAM ends
+
+OLD_INT09_OFF     dw 0
+OLD_INT09_SEG     dw 0
+
 .code
+; Fluxo principal: start -> menu -> NOVO_JOGO -> INICIA_JOGO -> GAME_OVER.
+; Na partida, ES aponta para o quadro em RAM. APRESENTA_QUADRO copia a imagem
+; para a VGA. No menu e no fim de jogo, o desenho vai diretamente para A000h.
+; DS normalmente aponta para .data. CLD em start faz as instrucoes de string
+; avancarem na memoria. Slot e uma entrada reutilizavel em uma tabela.
+; Quando uma rotina devolve CF, JC segue com CF = 1 e JNC com CF = 0.
 
 ; ---------------------------------------------------------------------
-; TRATA_TECLADO: handler da INT 09h; rastreia pressionamento/soltura
-; das setas. Encadeia com o handler anterior no final.
+; TRATA_TECLADO: registra as setas laterais e encadeia a interrupcao.
+; Entrada: IRQ 1 (INT 09h), codigo da tecla na porta 60h.
+; Saida:   TECLA_ESQ ou TECLA_DIR atualizado para as setas reconhecidas. O controle
+;          segue para o endereco salvo do tratador anterior.
 ; ---------------------------------------------------------------------
 TRATA_TECLADO proc far
     push AX
     push DS
 
+    ; A interrupcao pode chegar com outro DS. Guarde o segmento interrompido antes
+    ; de acessar as flags do jogo.
     mov AX, @data
     mov DS, AX
 
-    in AL, 60H               ; le scan code
+    in AL, 60H                                  ; le scan code
 
-    cmp AL, 4BH              ; seta esquerda pressionada
+    cmp AL, 4BH                                 ; seta esquerda pressionada
     je tecla_esq_press
-    cmp AL, 0CBH             ; seta esquerda solta
+    cmp AL, 0CBH                                ; seta esquerda solta
     je tecla_esq_solto
-    cmp AL, 4DH              ; seta direita pressionada
+    cmp AL, 4DH                                 ; seta direita pressionada
     je tecla_dir_press
-    cmp AL, 0CDH             ; seta direita solta
+    cmp AL, 0CDH                                ; seta direita solta
     je tecla_dir_solto
     jmp teclado_fim
 
@@ -1311,40 +1325,49 @@ tecla_dir_press:
 tecla_dir_solto:
     mov TECLA_DIR, 0
 
+    ; A leitura por CS usa duas words como ponteiro distante (offset e segmento). O
+    ; tratador encadeado conclui a interrupcao.
 teclado_fim:
     pop DS
     pop AX
 
-    push OLD_INT09_SEG
-    push OLD_INT09_OFF
-    retf                     ; encadeia com o handler anterior
+    jmp dword ptr CS:[OLD_INT09_OFF]            ; encadeia com o handler anterior
 TRATA_TECLADO endp
+
 ; ---------------------------------------------------------------------
-; MODO_VIDEO: ativa o modo grafico 13h (320x200, 256 cores).
+; MODO_VIDEO: seleciona o modo grafico VGA de 320 x 200 e 256 cores.
+; Entrada: Nenhum parametro.
+; Saida:   Modo 13h ativo.
 ; ---------------------------------------------------------------------
 MODO_VIDEO proc
+    ; AH seleciona o servico de troca de modo da BIOS e AL identifica o modo 13h.
     mov AX, 0013H
     int 10H
     ret
 MODO_VIDEO endp
 
 ; ---------------------------------------------------------------------
-; LIMPAR_TELA: preenche toda a VRAM com a cor 0 (preto).
-; Saida: ES = 0A000H; DI percorre a VRAM.
+; LIMPAR_TELA: preenche a tela inteira com a cor zero.
+; Entrada: Nenhum parametro.
+; Saida:   Tela preta, ES = A000h, DI = 64000 e DF = 0.
 ; ---------------------------------------------------------------------
 LIMPAR_TELA proc
     mov AX, 0A000h
     mov ES, AX
+    ; Comece no primeiro pixel de A000h. Com DF limpo, STOSW escreve dois pixels
+    ; pretos e avanca DI.
     xor DI, DI
     xor AX, AX
-    mov cx, 32000            ; 32000 words = 64000 bytes (tela inteira)
+    mov cx, 32000                               ; 32000 words = 64000 bytes (tela inteira)
     cld
     rep stosw
     ret
 LIMPAR_TELA endp
 
 ; ---------------------------------------------------------------------
-; MENU_INICIAL: desenha o titulo e entra no loop de selecao.
+; MENU_INICIAL: desenha o titulo, apresenta os sprites e abre a selecao.
+; Entrada: ES = segmento de video, OPCAO_SEL = opcao atual.
+; Saida:   OPCAO_SEL = opcao confirmada com Enter.
 ; ---------------------------------------------------------------------
 MENU_INICIAL proc
     push AX
@@ -1360,7 +1383,9 @@ MENU_INICIAL proc
     mov SI, offset TITULO_JOGO
     call ESCREVER_TEXTO
 
-    xor AX, AX               ; so desenha (nao move)
+    ; Um passo zero posiciona os sprites antes que o laco de selecao comece a
+    ; anima-los.
+    xor AX, AX                                  ; so desenha (nao move)
     call MOVER_SPRITES_MENU
 
     call DESENHAR_BOTOES
@@ -1373,28 +1398,27 @@ MENU_INICIAL proc
 MENU_INICIAL endp
 
 ; ---------------------------------------------------------------------
-; ESCREVER_TEXTO: desenha uma string usando a fonte bitmap.
-; Entrada: SI = texto terminado em 0
-;          DI = endereco da paleta
-;          CX = avanco X por caractere
-;          DX = avanco Y por quebra de linha
-;          ASCII_X, ASCII_Y = posicao inicial
-; Saida:   ASCII_X, ASCII_Y = posicao apos o texto
+; ESCREVER_TEXTO: desenha uma sequencia de glifos e trata as quebras de linha.
+; Entrada: DS:SI = texto terminado em zero, DI = paleta, ES = destino. ASCII_X/Y =
+;          origem, CX e DX = passos horizontal e vertical.
+; Saida:   ASCII_X/Y = posicao do cursor apos o texto.
 ; ---------------------------------------------------------------------
 ESCREVER_TEXTO proc
     push AX
     push BX
     push SI
 
-    mov BX, ASCII_X          ; BX = X inicial (restaurado em LF)
+    mov BX, ASCII_X                             ; BX = X inicial (restaurado em LF)
 
+    ; LODSB consome um byte de DS:SI. Zero termina; CR e LF permitem usar as
+    ; quebras de linha do DOS.
 texto_exibe:
     lodsb
     cmp AL, 0
     je  texto_fim
-    cmp AL, 13               ; CR: ignora
+    cmp AL, 13                                  ; CR: ignora
     je  texto_exibe
-    cmp AL, 10               ; LF: proxima linha
+    cmp AL, 10                                  ; LF: proxima linha
     je  texto_nova_linha
 
     call ASCII_PARA_INDICE
@@ -1415,20 +1439,22 @@ texto_fim:
 ESCREVER_TEXTO endp
 
 ; ---------------------------------------------------------------------
-; ASCII_PARA_INDICE: converte ASCII no indice do glifo em FONTE_GLYPHS.
-; Entrada: AL = caractere ASCII (maiuscula ou minuscula)
-; Saida:   AL = indice do glifo (desconhecido = G_ESPACO)
+; ASCII_PARA_INDICE: localiza um caractere na tabela da fonte.
+; Entrada: AL = codigo do caractere.
+; Saida:   AL = indice do glifo ou G_ESPACO se nao houver correspondencia.
 ; ---------------------------------------------------------------------
 ASCII_PARA_INDICE proc
     push BX
     push CX
 
-    cmp AL, 'a'              ; minuscula -> maiuscula
+    cmp AL, 'a'                                 ; minuscula -> maiuscula
     jb  procura
     cmp AL, 'z'
     ja  procura
     sub AL, 20H
 
+    ; Cada entrada representa um glifo. A distancia ate a base da tabela fornece o
+    ; indice usado no desenho.
 procura:
     mov BX, offset FONTE_CHARS
     mov CX, NUM_GLYPHS
@@ -1439,12 +1465,12 @@ procura_loop:
     inc BX
     loop procura_loop
 
-    mov AL, G_ESPACO         ; nao existe: usa espaco
+    mov AL, G_ESPACO                            ; nao existe: usa espaco
     jmp fim_conversao
 
 achou:
     sub BX, offset FONTE_CHARS
-    mov AL, BL                ; AL = indice do glifo
+    mov AL, BL                                  ; AL = indice do glifo
 
 fim_conversao:
     pop CX
@@ -1453,10 +1479,9 @@ fim_conversao:
 ASCII_PARA_INDICE endp
 
 ; ---------------------------------------------------------------------
-; DESENHA_CARACTERE: desenha um glifo 5x8 na VRAM.
-; Entrada: AL = indice do glifo
-;          DI = endereco da paleta (usa a cor em [DI+1])
-;          ASCII_X, ASCII_Y = posicao inicial
+; DESENHA_CARACTERE: desenha os bits ativos de um glifo de 5 x 8 pixels.
+; Entrada: AL = indice, DI = paleta, ASCII_X/Y = origem, ES = destino.
+; Saida:   Pixels do glifo pintados com a cor de [DI+1].
 ; ---------------------------------------------------------------------
 DESENHA_CARACTERE proc
     push AX
@@ -1468,33 +1493,35 @@ DESENHA_CARACTERE proc
     push BP
 
     xor AH, AH
-    shl AX, 3                ; AX = indice * 8 (8 bytes por glifo)
+    shl AX, 3                                   ; AX = indice * 8 (8 bytes por glifo)
     mov SI, offset FONTE_GLYPHS
-    add SI, AX               ; SI = bytes do glifo
+    add SI, AX                                  ; SI = bytes do glifo
 
     mov AX, ASCII_Y
     mov BX, LARG_TELA
-    mul BX                   ; AX = Y * 320
+    mul BX                                      ; AX = Y * 320
     add AX, ASCII_X
-    mov BH, [DI + 1]         ; BH = cor (entrada 1 da paleta)
-    mov DI, AX               ; DI = offset na VRAM
+    mov BH, [DI + 1]                            ; BH = cor (entrada 1 da paleta)
+    mov DI, AX                                  ; DI = offset no destino ES
 
-    mov AL, BH               ; AL = cor (para stosb)
-    mov BP, ALTURA           ; 8 linhas
+    mov AL, BH                                  ; AL = cor (para stosb)
+    mov BP, ALTURA                              ; 8 linhas
 
 proxima_linha:
-    mov BL, [SI]             ; BL = bitmap da linha
+    mov BL, [SI]                                ; BL = bitmap da linha
     inc SI
-    mov CX, LARGURA          ; 5 colunas
+    mov CX, LARGURA                             ; 5 colunas
 
+    ; O glifo usa cinco bits por linha. TEST consulta o bit atual e SHL traz o
+    ; proximo para a mesma posicao.
 proximo_pixel:
-    test BL, 10H             ; bit 4 = pixel mais a esquerda
+    test BL, 10H                                ; bit 4 = pixel mais a esquerda
     jz   pixel_vazio
-    stosb                    ; pinta
+    stosb                                       ; pinta
     jmp  proximo_bit
 
 pixel_vazio:
-    inc DI                   ; pula sem pintar
+    inc DI                                      ; pula sem pintar
 
 proximo_bit:
     shl BL, 1
@@ -1515,9 +1542,9 @@ proximo_bit:
 DESENHA_CARACTERE endp
 
 ; ---------------------------------------------------------------------
-; MOVER_SPRITES_MENU: anima as 3 naves e o jipe do menu em looping.
-; Entrada: AX = deslocamento horizontal por quadro
-; Saida:   SPRITES_MENU_X atualizado
+; MOVER_SPRITES_MENU: anima as tres naves e o jipe em um percurso ciclico.
+; Entrada: AX = deslocamento horizontal, ES = segmento de video.
+; Saida:   SPRITES_MENU_X atualizado e sprites desenhados.
 ; ---------------------------------------------------------------------
 MOVER_SPRITES_MENU proc
     push AX
@@ -1536,6 +1563,8 @@ MOVER_SPRITES_MENU proc
     mov BX, offset NAVE_PALETA
     mov CX, LARGURA_NAVE
 
+    ; BP percorre as posicoes de duas em duas (words). SI avanca um bitmap inteiro
+    ; para trocar o tipo da nave.
 menu_move_nave:
     mov DI, BP
     mov DX, SPRITES_MENU_X[DI]
@@ -1553,6 +1582,8 @@ menu_move_nave:
 
     pop BP
     mov DI, MODO_REAPARECE
+    ; O quarto X pertence ao jipe. Reutilize o movimento com as dimensoes e a
+    ; paleta dele.
     mov DX, SPRITES_MENU_X[6]
     mov ASCII_X, DX
     mov SI, offset JIPE_SPRITE
@@ -1573,12 +1604,12 @@ menu_move_nave:
 MOVER_SPRITES_MENU endp
 
 ; ---------------------------------------------------------------------
-; MOVER_SPRITE: apaga, desloca e redesenha um sprite.
-; Entrada: AX = deslocamento horizontal (com sinal)
-;          DI = MODO_REAPARECE ou MODO_SOME
-;          SI, BX, CX, DX = sprite, paleta, largura, altura
-;          FUNDO_COR = cor usada para apagar
-; Saida:   ASCII_X = nova posicao; CF = 1 se saiu (MODO_SOME)
+; MOVER_SPRITE: desloca o sprite e aplica a regra da borda da tela.
+; Entrada: AX = passo com sinal, DI = modo, SI = bitmap, BX = paleta. CX/DX =
+;          largura/altura, ASCII_X/Y = origem, ES = destino. FUNDO_COR = cor para
+;          apagar no modo de reaparecimento.
+; Saida:   ASCII_X = nova coluna. CF = 1 quando o sprite sai em MODO_SOME. CF = 0
+;          quando continua no percurso.
 ; ---------------------------------------------------------------------
 MOVER_SPRITE proc
     push AX
@@ -1588,9 +1619,12 @@ MOVER_SPRITE proc
     push BP
 
     mov BP, AX
+    cmp DI, MODO_SOME                           ; a partida ja recompos o fundo do quadro
+    je  mover_avanca
     mov AL, FUNDO_COR
     call APAGAR_SPRITE
 
+mover_avanca:
     mov AX, ASCII_X
     add AX, BP
     mov ASCII_X, AX
@@ -1603,7 +1637,7 @@ MOVER_SPRITE proc
     cmp DI, MODO_SOME
     je  mover_some_dir
 
-    sub AX, PERIODO_TELA     ; reaparece pela esquerda
+    sub AX, PERIODO_TELA                        ; reaparece pela esquerda
     mov ASCII_X, AX
     jmp mover_visivel
 
@@ -1611,15 +1645,17 @@ mover_some_dir:
     mov ASCII_X, LARG_TELA
     jmp mover_fora
 
+    ; A ultima coluna desaparece quando X chega a -largura. No menu, o periodo
+    ; recoloca o sprite do outro lado.
 mover_esquerda:
     mov BP, CX
-    neg BP                   ; BP = -largura
+    neg BP                                      ; BP = -largura
     cmp AX, BP
     jg  mover_visivel
     cmp DI, MODO_SOME
     je  mover_some_esq
 
-    add AX, PERIODO_TELA     ; reaparece pela direita
+    add AX, PERIODO_TELA                        ; reaparece pela direita
     mov ASCII_X, AX
     jmp mover_visivel
 
@@ -1645,9 +1681,9 @@ mover_fim:
 MOVER_SPRITE endp
 
 ; ---------------------------------------------------------------------
-; APAGAR_SPRITE: pinta um retangulo sobre a area visivel do sprite.
-; Entrada: AL = cor; CX = largura; DX = altura
-;          ASCII_X, ASCII_Y = posicao
+; APAGAR_SPRITE: cobre a parte visivel do sprite com uma cor.
+; Entrada: AL = cor, CX/DX = largura/altura, ASCII_X/Y = origem, ES = destino.
+; Saida:   Retangulo visivel preenchido. ASCII_X original restaurado.
 ; ---------------------------------------------------------------------
 APAGAR_SPRITE proc
     push AX
@@ -1656,9 +1692,11 @@ APAGAR_SPRITE proc
     push DX
     push ASCII_X
 
-    mov BL, AL               ; BL = cor
+    ; Guarde a cor antes de usar AX para o recorte. Se a largura visivel for zero,
+    ; nao ha pixels para preencher.
+    mov BL, AL                                  ; BL = cor
     mov AX, ASCII_X
-    call RECORTA_X           ; AX = X visivel, CX = largura visivel
+    call RECORTA_X                              ; AX = X visivel, CX = largura visivel
     jcxz apagar_fim
     mov ASCII_X, AX
     mov AL, BL
@@ -1674,29 +1712,31 @@ apagar_fim:
 APAGAR_SPRITE endp
 
 ; ---------------------------------------------------------------------
-; RECORTA_X: limita um trecho horizontal a largura da tela.
-; Entrada: AX = X inicial (com sinal), CX = largura original
-; Saida:   AX = primeiro X visivel, CX = largura visivel (0 = fora)
+; RECORTA_X: calcula a intersecao horizontal entre sprite e tela.
+; Entrada: AX = coluna inicial com sinal, CX = largura original.
+; Saida:   CX = largura visivel. Se CX > 0, AX = primeira coluna visivel.
 ; ---------------------------------------------------------------------
 RECORTA_X proc
     push BX
 
     cmp AX, 0
-    jge recorta_dir          ; X ja visivel
+    jge recorta_dir                             ; X nao negativo: confira a borda direita
     mov BX, AX
-    neg BX                   ; BX = colunas cortadas a esquerda
+    neg BX                                      ; BX = colunas cortadas a esquerda
     cmp BX, CX
-    jae recorta_nada         ; tudo fora pela esquerda
+    jae recorta_nada                            ; tudo fora pela esquerda
     sub CX, BX
-    xor AX, AX               ; primeira coluna visivel = 0
+    xor AX, AX                                  ; primeira coluna visivel = 0
 
+    ; Depois do corte esquerdo, compare a largura restante com a distancia entre X
+    ; e a borda direita.
 recorta_dir:
     mov BX, LARG_TELA
-    sub BX, AX               ; BX = colunas ate a borda direita
-    jle recorta_nada         ; tudo fora pela direita
+    sub BX, AX                                  ; BX = colunas ate a borda direita
+    jle recorta_nada                            ; tudo fora pela direita
     cmp CX, BX
     jbe recorta_fim
-    mov CX, BX               ; corta excesso a direita
+    mov CX, BX                                  ; corta excesso a direita
 
 recorta_fim:
     pop BX
@@ -1708,11 +1748,10 @@ recorta_nada:
 RECORTA_X endp
 
 ; ---------------------------------------------------------------------
-; PREENCHER_LINHAS: pinta um retangulo de cor unica.
-; Entrada: AL = cor (byte direto, nao indice de paleta)
-;          CX = largura em pixels
-;          DX = altura em linhas (0 nao desenha)
-;          ASCII_X, ASCII_Y = canto superior esquerdo
+; PREENCHER_LINHAS: pinta um retangulo com uma unica cor.
+; Entrada: AL = cor, CX/DX = largura/altura, ASCII_X/Y = origem valida, ES =
+;          destino.
+; Saida:   Retangulo preenchido. Altura zero encerra a rotina.
 ; ---------------------------------------------------------------------
 PREENCHER_LINHAS proc
     push AX
@@ -1722,24 +1761,26 @@ PREENCHER_LINHAS proc
     push SI
     push DI
 
-    mov SI, DX               ; SI = contador de linhas (mul sobrescreve DX)
+    mov SI, DX                                  ; SI = contador de linhas (mul sobrescreve DX)
     cmp SI, 0
     je  preencher_fim
 
-    mov BH, AL               ; guarda a cor
+    mov BH, AL                                  ; guarda a cor
     mov AX, ASCII_Y
     mov DX, LARG_TELA
-    mul DX                   ; AX = Y * 320
+    mul DX                                      ; AX = Y * 320
     add AX, ASCII_X
-    mov DI, AX               ; DI = offset inicial na VRAM
+    mov DI, AX                                  ; DI = offset inicial no destino ES
     mov AL, BH
-    mov BX, CX               ; BX = largura (preservada entre linhas)
+    mov BX, CX                                  ; BX = largura (preservada entre linhas)
 
+    ; REP consome CX e avanca DI. Recarregue a largura e compense o avanco para
+    ; manter o mesmo X na linha seguinte.
 preencher_linha:
     mov CX, BX
-    rep stosb                ; pinta a linha
-    add DI, LARG_TELA        ; desce uma linha
-    sub DI, BX               ; volta ao X inicial
+    rep stosb                                   ; pinta a linha
+    add DI, LARG_TELA                           ; desce uma linha
+    sub DI, BX                                  ; volta ao X inicial
     dec SI
     jnz preencher_linha
 
@@ -1754,10 +1795,10 @@ preencher_fim:
 PREENCHER_LINHAS endp
 
 ; ---------------------------------------------------------------------
-; DESENHA_SPRITE_RECORTADO: desenha apenas a parte visivel do sprite.
-; Entrada: SI = sprite; BX = paleta
-;          CX = largura total; DX = altura total
-;          ASCII_X, ASCII_Y = posicao (X pode ser negativo)
+; DESENHA_SPRITE_RECORTADO: desenha a parte do bitmap que cabe na largura da tela.
+; Entrada: SI = bitmap, BX = paleta, CX/DX = largura/altura. ASCII_X/Y = origem, ES
+;          = destino. A altura deve caber na tela.
+; Saida:   Parte visivel desenhada, coordenadas de origem preservadas.
 ; ---------------------------------------------------------------------
 DESENHA_SPRITE_RECORTADO proc
     push AX
@@ -1770,21 +1811,34 @@ DESENHA_SPRITE_RECORTADO proc
     push ASCII_X
     push ASCII_Y
 
-    mov BP, DX               ; BP = linhas restantes
-    mov DI, CX               ; DI = passo de linha (largura)
+    ; Um sprite inteiro cabe em uma unica chamada de desenho.
     mov AX, ASCII_X
-    call RECORTA_X           ; AX = X visivel, CX = largura visivel
+    test AX, AX
+    js  recortado_bordas
+    add AX, CX
+    cmp AX, LARG_TELA
+    ja  recortado_bordas
+    call DESENHA_ASCII_PALETA
+    jmp recortado_fim
+
+recortado_bordas:
+    mov BP, DX                                  ; BP = linhas restantes
+    mov DI, CX                                  ; DI = passo de linha (largura)
+    mov AX, ASCII_X
+    call RECORTA_X                              ; AX = X visivel, CX = largura visivel
     jcxz recortado_fim
 
     mov DX, AX
-    sub DX, ASCII_X          ; DX = colunas cortadas a esquerda
-    add SI, DX               ; pula no sprite
+    sub DX, ASCII_X                             ; DX = colunas cortadas a esquerda
+    add SI, DX                                  ; pula no sprite
     mov ASCII_X, AX
-    mov DX, 1                ; 1 linha por chamada
+    mov DX, 1                                   ; 1 linha por chamada
 
+    ; O destino recebe apenas as colunas visiveis. Na origem, o inicio da proxima
+    ; linha continua a uma largura inteira.
 recortado_linha:
     call DESENHA_ASCII_PALETA
-    add SI, DI               ; proxima linha do sprite
+    add SI, DI                                  ; proxima linha do sprite
     inc ASCII_Y
     dec BP
     jnz recortado_linha
@@ -1803,11 +1857,10 @@ recortado_fim:
 DESENHA_SPRITE_RECORTADO endp
 
 ; ---------------------------------------------------------------------
-; DESENHA_ASCII_PALETA: desenha sprite com cores indexadas por paleta.
-; '0' no bitmap = pixel transparente (nao sobrescreve o fundo).
-; Entrada: SI = sprite; BX = paleta
-;          CX = largura; DX = altura
-;          ASCII_X, ASCII_Y = canto superior esquerdo
+; DESENHA_ASCII_PALETA: converte digitos do bitmap em cores da paleta.
+; Entrada: DS:SI = bitmap, DS:BX = paleta, CX/DX = largura/altura positivas.
+;          ASCII_X/Y = origem, ES = destino com espaco para o retangulo.
+; Saida:   Pixels coloridos no destino. O digito '0' preserva o fundo.
 ; ---------------------------------------------------------------------
 DESENHA_ASCII_PALETA proc
     push AX
@@ -1818,23 +1871,25 @@ DESENHA_ASCII_PALETA proc
     push DI
     push BP
 
-    mov BP, DX               ; altura (mul sobrescreve DX)
+    mov BP, DX                                  ; altura (mul sobrescreve DX)
     mov AX, ASCII_Y
     mov DX, LARG_TELA
     mul DX
     add AX, ASCII_X
     mov DI, AX
-    mov DX, CX               ; DX = largura (usada em cada linha)
+    mov DX, CX                                  ; DX = largura (usada em cada linha)
 
 paleta_linha:
     mov CX, DX
 
+    ; O bitmap contem digitos ASCII. Subtrair '0' produz o indice que XLAT consulta
+    ; em DS:BX; STOSB escreve em ES:DI.
 paleta_pixel:
     lodsb
     sub AL, '0'
     cmp AL, 0
-    je  paleta_vazio         ; indice 0 = transparente
-    xlat                     ; AL = paleta[AL]
+    je  paleta_vazio                            ; indice 0 = transparente
+    xlat                                        ; AL = paleta[AL]
     stosb
     jmp paleta_proximo
 
@@ -1860,8 +1915,9 @@ paleta_proximo:
 DESENHA_ASCII_PALETA endp
 
 ; ---------------------------------------------------------------------
-; DESENHAR_BOTOES: desenha os botoes, anima os sprites enquanto espera
-; e atualiza OPCAO_SEL conforme as setas.
+; DESENHAR_BOTOES: desenha as opcoes e anima o menu ate a confirmacao.
+; Entrada: OPCAO_SEL = selecao atual, ES = segmento de video.
+; Saida:   OPCAO_SEL = indice confirmado com Enter.
 ; ---------------------------------------------------------------------
 DESENHAR_BOTOES proc
     push AX
@@ -1873,7 +1929,7 @@ DESENHAR_BOTOES proc
     push BP
 
 botoes_redesenha:
-    xor BP, BP               ; BP = indice da opcao
+    xor BP, BP                                  ; BP = indice da opcao
 
 botoes_proximo:
     mov DI, offset COR_BOTAO
@@ -1882,6 +1938,8 @@ botoes_proximo:
     jne botoes_cor
     mov DI, offset COR_SELEC
 
+    ; As tabelas guardam ponteiros e coordenadas em words. O indice da opcao vezes
+    ; dois seleciona o par correto.
 botoes_cor:
     mov BX, BP
     shl BX, 1
@@ -1890,7 +1948,7 @@ botoes_cor:
     mov BTN_TXT, SI
     mov BTN_Y, DX
 
-    xor CX, CX               ; conta caracteres
+    xor CX, CX                                  ; conta caracteres
     mov BX, SI
 botoes_conta:
     cmp byte ptr [BX], 0
@@ -1899,15 +1957,17 @@ botoes_conta:
     inc CX
     jmp botoes_conta
 
+    ; Some as duas bordas e duas celulas de margem ao texto. Metade da largura que
+    ; sobra na tela define X.
 botoes_fim_conta:
     mov AX, CX
     add AX, 4
     mov BX, LARGURA
-    mul BX                   ; AX = largura total em px
+    mul BX                                      ; AX = largura total em px
     mov BX, AX
     mov AX, LARG_TELA
     sub AX, BX
-    shr AX, 1                ; AX = X centralizado
+    shr AX, 1                                   ; AX = X centralizado
     mov BTN_X, AX
 
     add CX, 2
@@ -1933,21 +1993,23 @@ botoes_fim_conta:
     jae botoes_tecla
     jmp botoes_proximo
 
+    ; Enquanto a BIOS nao indicar tecla, anime os sprites. Uma seta valida
+    ; redesenha as opcoes; Enter confirma.
 botoes_tecla:
     call ESPERA_RETRACO
-    mov AX, 2
+    mov AX, VEL_MENU
     call MOVER_SPRITES_MENU
 
     mov AH, 01H
-    int 16H                  ; tecla disponivel?
+    int 16H                                     ; tecla disponivel?
     jz  botoes_tecla
     mov AH, 00H
     int 16H
-    cmp AH, 48H              ; seta para cima
+    cmp AH, 48H                                 ; seta para cima
     je  botoes_cima
-    cmp AH, 50H              ; seta para baixo
+    cmp AH, 50H                                 ; seta para baixo
     je  botoes_baixo
-    cmp AL, 13               ; Enter
+    cmp AL, 13                                  ; Enter
     je  botoes_enter
     jmp botoes_tecla
 
@@ -1975,11 +2037,10 @@ botoes_enter:
 DESENHAR_BOTOES endp
 
 ; ---------------------------------------------------------------------
-; DESENHAR_CAIXA: desenha a moldura de um botao (3 linhas de celulas).
-; Entrada: CX = numero de celulas entre os cantos
-;          DI = endereco da paleta
-;          ASCII_X, ASCII_Y = canto superior esquerdo
-; Saida:   ASCII_X, ASCII_Y preservados
+; DESENHAR_CAIXA: monta uma moldura com tres linhas de glifos.
+; Entrada: CX = numero positivo de celulas internas, DI = paleta. ASCII_X/Y = canto
+;          superior esquerdo, ES = destino.
+; Saida:   Caixa desenhada, ASCII_X/Y restaurados.
 ; ---------------------------------------------------------------------
 DESENHAR_CAIXA proc
     push AX
@@ -1990,10 +2051,12 @@ DESENHAR_CAIXA proc
     push BP
 
     mov SI, ASCII_X
-    mov DX, CX               ; DX = repeticoes do meio
+    mov DX, CX                                  ; DX = repeticoes do meio
     mov BX, offset CAIXA_GLIFOS
-    mov BP, 3                ; 3 linhas
+    mov BP, 3                                   ; 3 linhas
 
+    ; Cada trio da tabela fornece a ponta esquerda, o miolo repetido e a ponta
+    ; direita de uma linha.
 caixa_linha:
     mov AL, [BX]
     call DESENHA_CARACTERE
@@ -2015,7 +2078,7 @@ caixa_meio:
     dec BP
     jnz caixa_linha
 
-    sub ASCII_Y, 3 * ALTURA  ; restaura Y inicial
+    sub ASCII_Y, 3 * ALTURA                     ; restaura Y inicial
     pop BP
     pop SI
     pop DX
@@ -2026,7 +2089,9 @@ caixa_meio:
 DESENHAR_CAIXA endp
 
 ; ---------------------------------------------------------------------
-; ESPERA_RETRACO: bloqueia ate o inicio do proximo retraco vertical.
+; ESPERA_RETRACO: aguarda o inicio do proximo retraco vertical da VGA.
+; Entrada: Estado do video na porta 3DAh.
+; Saida:   Retorna quando o bit 3 indica o inicio do retraco.
 ; ---------------------------------------------------------------------
 ESPERA_RETRACO proc
     push AX
@@ -2034,15 +2099,17 @@ ESPERA_RETRACO proc
 
     mov DX, 3DAH
 
+    ; Espere o bit baixar antes de esperar que suba. Assim duas chamadas aguardam
+    ; inicios de retraco distintos.
 retraco_sai:
     in AL, DX
-    test AL, 08H             ; bit 3 = retraco em andamento
-    jnz retraco_sai          ; espera o atual terminar
+    test AL, 08H                                ; bit 3 = retraco em andamento
+    jnz retraco_sai                             ; espera o atual terminar
 
 retraco_entra:
     in AL, DX
     test AL, 08H
-    jz  retraco_entra        ; espera o proximo comecar
+    jz  retraco_entra                           ; espera o proximo comecar
 
     pop DX
     pop AX
@@ -2050,8 +2117,9 @@ retraco_entra:
 ESPERA_RETRACO endp
 
 ; ---------------------------------------------------------------------
-; INICIA_ALEATORIO: mistura ticks do BIOS com o timer 8253 para gerar
-; uma semente diferente a cada chamada.
+; INICIA_ALEATORIO: combina os ticks da BIOS com o contador do temporizador.
+; Entrada: Relogio da BIOS e canal 0 do temporizador.
+; Saida:   SEMENTE inicializada com um valor diferente de zero.
 ; ---------------------------------------------------------------------
 INICIA_ALEATORIO proc
     push AX
@@ -2059,16 +2127,18 @@ INICIA_ALEATORIO proc
     push DX
 
     mov AH, 00H
-    int 1AH                  ; CX:DX = ticks
+    int 1AH                                     ; CX:DX = ticks
     xor DX, CX
+    ; O comando na porta 43h trava a amostra do canal 0. As duas leituras da porta
+    ; 40h entram na mistura com os ticks.
     xor AL, AL
     out 43H, AL
     in  AL, 40H
     mov AH, AL
-    in  AL, 40H              ; AX = contador do timer
+    in  AL, 40H                                 ; AX combina os dois bytes amostrados
     xor AX, DX
     jnz semente_ok
-    mov AX, 0ACE1H           ; semente nao pode ser 0
+    mov AX, 0ACE1H                              ; semente nao pode ser 0
 semente_ok:
     mov SEMENTE, AX
 
@@ -2079,7 +2149,9 @@ semente_ok:
 INICIA_ALEATORIO endp
 
 ; ---------------------------------------------------------------------
-; NOVO_JOGO: restaura vidas, score, tempo e referencia de ticks.
+; NOVO_JOGO: inicializa os dados de uma nova partida.
+; Entrada: DURACAO_JOGO = tempo inicial em segundos.
+; Saida:   Tres vidas, score zerado, tempo inicial formatado e fracao zerada.
 ; ---------------------------------------------------------------------
 NOVO_JOGO proc
     mov VIDAS, 3
@@ -2088,26 +2160,36 @@ NOVO_JOGO proc
     mov SCORE_INICIAL[1], '0'
     mov SCORE_INICIAL[2], '0'
     mov SCORE_INICIAL[3], '0'
-    mov TEMPO_INICIAL, 60
-    mov TEMPO_TEXTO[0], '6'
-    mov TEMPO_TEXTO[1], '0'
+    ; Parta do valor configurado e gere o texto a partir dele, para que contador e
+    ; mostrador comecem iguais.
+    mov TEMPO_INICIAL, DURACAO_JOGO
+    mov TEMPO_FRACAO, 0
+    call FORMATA_TEMPO
     ret
 NOVO_JOGO endp
 
 ; ---------------------------------------------------------------------
-; INICIA_JOGO: loop principal da partida.
-; Retorna ao chamador quando Esc e' pressionado ou o tempo acaba.
+; INICIA_JOGO: prepara o cenario e executa o laco da partida.
+; Entrada: Dados de NOVO_JOGO e semente inicializada.
+; Saida:   Retorna por Esc, tempo esgotado ou fim das vidas. ES = A000h e
+;          SCORE_INICIAL guarda a pontuacao final.
 ; ---------------------------------------------------------------------
 INICIA_JOGO proc
-inicio_jogo:                 ; reinicio apos colisao
-    call LIMPAR_TELA
+    ; A partida monta a imagem em RAM. Limpe os 64000 bytes antes de compor a
+    ; primeira paisagem.
+    mov AX, SEG PIXELS_QUADRO
+    mov ES, AX
+    xor AX, AX
+    xor DI, DI
+    mov CX, LARG_TELA * ALT_TELA / 2
+    rep stosw
+    mov ORIGEM_LUA, AX
     mov JIPE_X, 10
     mov word ptr TIRO_CIMA[T_ATIVO], 0
     mov word ptr TIRO_FRENTE[T_ATIVO], 0
     mov JIPE_ALT, 0
     mov SALTO_FASE, 0
 
-    call EXIBE_STATUS
     call INICIA_CRATERAS
     call INICIA_ROCHAS
     call INICIA_ALIENS          
@@ -2128,6 +2210,8 @@ inicio_jogo:                 ; reinicio apos colisao
     call PREENCHER_LINHAS
 
     mov ASCII_X, 0
+    ; A camada proxima cobre a distante onde seus pixels sao opacos. O
+    ; preenchimento completa o trecho abaixo dela.
     mov ASCII_Y, Y_PERTO
     mov SI, offset TERRENO_PERTO_SPRITE
     mov BX, offset TERRENO_PERTO_PALETA
@@ -2141,125 +2225,228 @@ inicio_jogo:                 ; reinicio apos colisao
     mov DX, PREENCHE_PERTO
     call PREENCHER_LINHAS
 
+    ; Desenhe a pista por ultimo, antes de guardar o panorama sem jipe, tiros ou
+    ; obstaculos.
     mov ASCII_Y, Y_SUPERFICIE
     mov AL, COR_SUPERFICIE
     mov CX, LARG_TELA
     mov DX, ALTURA_SUPERFICIE
     call PREENCHER_LINHAS
 
-    mov ASCII_X, 10
-    sub ASCII_Y, ALTURA_JIPE
-    mov SI, offset JIPE_SPRITE
-    mov BX, offset JIPE_PALETA
-    mov CX, LARGURA_JIPE
-    mov DX, ALTURA_JIPE
-    call DESENHA_ASCII_PALETA
+    ; Guarda o fundo limpo uma vez. O quadro recebe duas fatias por linha
+    ; para ligar a ultima coluna do panorama de volta a primeira.
+    push DS
+    push ES
+    mov AX, ES
+    mov DS, AX
+    mov AX, SEG PIXELS_LUA
+    mov ES, AX
+    mov SI, Y_REGIAO * LARG_TELA
+    xor DI, DI
+    mov CX, LARG_TELA * (ALT_TELA - Y_REGIAO) / 2
+    rep movsw
+    pop ES
+    pop DS
 
     mov AH, 00H
     int 1AH
     mov TEMPO_DECORRIDO, DX
 
+    ; Comece pelo fundo. Teste os tiros do jipe nas posicoes atuais antes de
+    ; avanca-los e de mover os alvos.
 jogo_loop:
-    call ESPERA_RETRACO
+    call PREPARA_QUADRO
 
     mov BX, offset TIRO_FRENTE
     call VERIFICA_TIRO_ROCHAS
-    call VERIFICA_TIRO_CIMA_ALIENS   ; usa TIRO_CIMA internamente e preserva BX
+    call VERIFICA_TIRO_CIMA_ALIENS              ; usa TIRO_CIMA internamente e preserva BX
 
     mov BX, offset TIRO_CIMA
     call ATUALIZA_TIRO
     mov BX, offset TIRO_FRENTE
     call ATUALIZA_TIRO
-    call ATUALIZA_TIROS_ALIENS       ; define ALIEN_HIT_FLAG
 
-    call ROLA_CRATERAS               ; define PASSO_CHAO
+    call ROLA_CRATERAS
     call ROLA_ROCHAS
     call ROLA_ALIENS
-    call ATIRA_ALIENS
 
-    call VERIFICA_SALTO_CRATERAS
-    jc  colidiu
-    call VERIFICA_ROCHAS
-    jc  colidiu
-    cmp ALIEN_HIT_FLAG, 0
-    je  sem_colisao                  ; nenhum tiro alienigena acertou o jipe
-
-colidiu:
-    call DEC_CORACAO                 ; (resto igual: reinicia_jogo, pausa_colisao...)
-    jnc reinicia_jogo
-    jmp jogo_fim
-
-reinicia_jogo:
-    mov CX, 40               ; ~0,7s de pausa
-pausa_colisao:
-    call ESPERA_RETRACO
-    loop pausa_colisao
-    jmp inicio_jogo
-
-sem_colisao:
+    ; A contagem sinaliza em AL quando desconta um segundo. Ao chegar a zero, o
+    ; fluxo sai para a tela final.
     call CONTAGEM_TEMPO
     cmp AL, 1
     jne verifica_teclado
     cmp TEMPO_INICIAL, 0
-    je  jogo_fim
-    call ATUALIZA_TEMPO
+    jne verifica_teclado
+    jmp jogo_fim
 
+    ; A BIOS fornece eventos de Esc, espaco e salto. As setas laterais usam o
+    ; estado pressionado/solto gravado pela interrupcao.
 verifica_teclado:
     mov AH, 01H
-    int 16H                  ; tecla disponivel?
+    int 16H                                     ; tecla disponivel?
     jz  atualiza_jipe
     mov AH, 00H
     int 16H
-    cmp AL, 1BH              ; Esc
+    cmp AL, 1BH                                 ; Esc
     jne verifica_espaco
     jmp jogo_fim
 
 verifica_espaco:
-    cmp AL, 20H              ; espaco: atira
+    cmp AL, 20H                                 ; espaco: atira
     jne verifica_salto
     call DISPARAR
 
 verifica_salto:
-    cmp AH, 48H              ; seta para cima: salta
+    cmp AH, 48H                                 ; seta para cima: salta
     jne atualiza_jipe
     cmp SALTO_FASE, 0
     jne atualiza_jipe
     mov SALTO_FASE, 1
 
+    ; Reconstrua a velocidade a cada quadro. Se as duas setas estiverem
+    ; pressionadas, a direita tem prioridade.
 atualiza_jipe:
     mov JIPE_VEL, 0
     cmp TECLA_ESQ, 1
     jne verifica_direita
-    mov JIPE_VEL, -1
+    mov JIPE_VEL, -VEL_JIPE
 
 verifica_direita:
     cmp TECLA_DIR, 1
     jne move_jipe
-    mov JIPE_VEL, 2
+    mov JIPE_VEL, VEL_JIPE
 
 move_jipe:
-    ; sem SALTO_VX: no ar sem input, JIPE_VEL = 0 (jipe fica parado
-    ; horizontalmente; a fase de topo espera a superficie rolar).
-    cmp JIPE_VEL, 0
-    jne move_jipe_exec
-    cmp SALTO_FASE, 0
-    je  jogo_volta           ; parado no chao: nada a redesenhar
-
-move_jipe_exec:
-    mov AL, [TERRENO_PERTO_PALETA + 1]
-    mov FUNDO_COR, AL
     mov AX, JIPE_VEL
     call MOVER_JIPE
+    call ATUALIZA_TIROS_ALIENS                  ; compara com o jipe ja deslocado
+    call ATIRA_ALIENS
 
-jogo_volta:
+    ; Crateras e rochas devolvem a colisao em CF. O tiro alienigena tambem deixa o
+    ; resultado em memoria para esta verificacao.
+    call VERIFICA_SALTO_CRATERAS
+    jc  colidiu
+    call VERIFICA_ROCHAS
+    jc  colidiu
+    cmp ALIEN_HIT_FLAG, 0
+    je  apresenta_jogo
+
+colidiu:
+    call DEC_CORACAO
+    jnc reinicia_jipe
+    jmp jogo_fim
+
+reinicia_jipe:
+    ; Somente o jipe reaparece. O grupo, os tiros e os obstaculos
+    ; conservam as posicoes que tinham no instante da colisao.
+    mov JIPE_X, 0
+    mov JIPE_ALT, 0
+    mov SALTO_FASE, 0
+    mov CX, PAUSA_COLISAO_Q
+    jcxz fim_pausa_jipe
+pausa_colisao:
+    call ESPERA_RETRACO
+    loop pausa_colisao
+fim_pausa_jipe:
+    ; Descarta apenas os ticks da pausa.
+    mov AH, 00H
+    int 1AH
+    mov TEMPO_DECORRIDO, DX
+    jmp jogo_loop
+
+    ; Desenhe o status por cima do quadro completo, apresente a imagem e so entao
+    ; inicie o proximo passo.
+apresenta_jogo:
+    call EXIBE_STATUS
+    call APRESENTA_QUADRO
     jmp jogo_loop
 
 jogo_fim:
+    mov AX, 0A000H
+    mov ES, AX                                  ; menu e game over desenham direto na VRAM
     ret
 INICIA_JOGO endp
 
 ; ---------------------------------------------------------------------
-; EXIBE_STATUS: desenha coracoes, score e relogio com o tempo atual.
+; PREPARA_QUADRO: limpa o ceu e desloca o panorama no quadro em RAM.
+; Entrada: ES = segmento de PIXELS_QUADRO, PIXELS_LUA = panorama pronto. ORIGEM_LUA
+;          = primeira coluna usada no quadro anterior.
+; Saida:   ORIGEM_LUA avanca com retorno ciclico. Quadro pronto para os objetos.
+; ---------------------------------------------------------------------
+PREPARA_QUADRO proc
+    mov BX, ORIGEM_LUA
+    add BX, VEL_CHAO
+    cmp BX, LARG_TELA
+    jb  quadro_origem
+    sub BX, LARG_TELA
+quadro_origem:
+    mov ORIGEM_LUA, BX
+    xor DI, DI
+    xor AX, AX
+    mov CX, Y_REGIAO * LARG_TELA / 2
+    rep stosw
+    push DS
+    mov AX, SEG PIXELS_LUA
+    mov DS, AX
+    xor SI, SI
+    mov DX, ALT_TELA - Y_REGIAO
+    ; Copie da coluna BX ate a borda direita, depois da coluna zero ate BX-1. A
+    ; juncao das duas fatias produz a rolagem.
+quadro_linha:
+    add SI, BX
+    mov CX, LARG_TELA
+    sub CX, BX
+    shr CX, 1
+    rep movsw
+    adc CX, 0                                   ; se a fatia for impar, sobra um byte
+    rep movsb
+    ; SI chegou ao fim da linha. Volte ao inicio dela para copiar a segunda fatia;
+    ; DI continua no ponto da juncao.
+    sub SI, LARG_TELA
+    mov CX, BX
+    shr CX, 1
+    rep movsw
+    adc CX, 0
+    rep movsb
+    sub SI, BX
+    add SI, LARG_TELA
+    dec DX
+    jnz quadro_linha
+    pop DS
+    ret
+PREPARA_QUADRO endp
+
+; ---------------------------------------------------------------------
+; APRESENTA_QUADRO: sincroniza a exibicao e copia o quadro para a VGA.
+; Entrada: ES = segmento do quadro completo em RAM.
+; Saida:   64000 bytes copiados para A000h. DS e ES restaurados.
+; ---------------------------------------------------------------------
+APRESENTA_QUADRO proc
+    mov CX, RETRACOS_POR_PASSO
+apresenta_espera:
+    call ESPERA_RETRACO
+    loop apresenta_espera
+    ; MOVSW le de DS:SI e escreve em ES:DI. Troque os segmentos para copiar da RAM
+    ; para A000h e restaure-os na volta.
+    push DS
+    push ES
+    mov AX, ES
+    mov DS, AX
+    mov AX, 0A000H
+    mov ES, AX
+    xor SI, SI
+    xor DI, DI
+    mov CX, LARG_TELA * ALT_TELA / 2
+    rep movsw
+    pop ES
+    pop DS
+    ret
+APRESENTA_QUADRO endp
+
+; ---------------------------------------------------------------------
+; EXIBE_STATUS: desenha vidas, score, relogio e tempo restante.
+; Entrada: VIDAS, SCORE_INICIAL, TEMPO_TEXTO e ES = segmento do quadro.
+; Saida:   Barra de status desenhada no quadro atual.
 ; ---------------------------------------------------------------------
 EXIBE_STATUS proc
     call DESENHA_CORACOES
@@ -2273,6 +2460,8 @@ EXIBE_STATUS proc
     mov DX, ALTURA_RELOGIO
     call DESENHA_ASCII_PALETA
 
+    ; A posicao do texto parte da origem do relogio, com espaco para o icone a
+    ; esquerda.
     add ASCII_X, 10
     add ASCII_Y, 1
     mov SI, offset TEMPO_TEXTO
@@ -2284,7 +2473,9 @@ EXIBE_STATUS proc
 EXIBE_STATUS endp
 
 ; ---------------------------------------------------------------------
-; DESENHA_CORACOES: desenha o sprite de coracoes correspondente a VIDAS.
+; DESENHA_CORACOES: seleciona o bitmap correspondente ao numero de vidas.
+; Entrada: VIDAS = 1 a 3, ES = segmento do quadro.
+; Saida:   Bitmap de vidas desenhado em X_CORACAO, Y_CORACAO.
 ; ---------------------------------------------------------------------
 DESENHA_CORACOES proc
     push BX
@@ -2292,12 +2483,14 @@ DESENHA_CORACOES proc
     push DX
     push SI
 
+    ; Transforme 1..3 vidas em indices 0..2. Cada entrada da tabela ocupa dois
+    ; bytes e aponta para um bitmap.
     mov BL, VIDAS
     xor BH, BH
     dec BX
-    shl BX, 1                ; BX = (VIDAS-1) * 2
+    shl BX, 1                                   ; BX = (VIDAS-1) * 2
     mov SI, CORACOES[BX]
-    mov CX, CORACAO_LARG[BX]
+    mov CX, LARGURA_CORACAO
     mov ASCII_X, X_CORACAO
     mov ASCII_Y, Y_CORACAO
     mov BX, offset COR_CORACAO
@@ -2312,8 +2505,9 @@ DESENHA_CORACOES proc
 DESENHA_CORACOES endp
 
 ; ---------------------------------------------------------------------
-; DESENHA_SCORE: redesenha "SCORE nnnn" na barra de status.
-; Entrada: ES = 0A000H
+; DESENHA_SCORE: limpa o campo de pontos e escreve o score atual.
+; Entrada: SCORE_INICIAL = quatro digitos ASCII, ES = destino.
+; Saida:   Prefixo e pontuacao desenhados em X_SCORE, Y_SCORE.
 ; ---------------------------------------------------------------------
 DESENHA_SCORE proc
     push AX
@@ -2327,13 +2521,15 @@ DESENHA_SCORE proc
     mov AL, COR_FUNDO
     mov CX, 10 * LARGURA
     mov DX, ALTURA
-    call PREENCHER_LINHAS    ; apaga area
+    call PREENCHER_LINHAS                       ; apaga area
 
     mov DI, offset COR_BOTAO
     mov CX, LARGURA
     mov DX, ALTURA
     mov SI, offset TXT_SCORE
     call ESCREVER_TEXTO
+    ; O prefixo ja avancou ASCII_X. Continue a escrita a partir desse cursor para
+    ; anexar os quatro digitos.
     mov SI, offset SCORE_INICIAL
     call ESCREVER_TEXTO
 
@@ -2346,15 +2542,19 @@ DESENHA_SCORE proc
 DESENHA_SCORE endp
 
 ; ---------------------------------------------------------------------
-; INICIA_CRATERAS: libera todos os slots e sorteia o instante da 1a
-; cratera (0..DIST_VAR_CRATERA-1 px).
+; INICIA_CRATERAS: esvazia a tabela e sorteia a distancia da primeira cratera.
+; Entrada: SEMENTE inicializada.
+; Saida:   Slots livres, CRATERA_GERADA = 0 e CRATERA_PROX inicializada.
 ; ---------------------------------------------------------------------
 INICIA_CRATERAS proc
+    mov CRATERA_GERADA, 0
     push AX
     push BX
     push CX
 
     xor BX, BX
+    ; O marcador de slot livre ocupa uma word. Depois de limpar a tabela, sorteie a
+    ; distancia ate a primeira tentativa.
 cratera_zera:
     mov CRATERAS_X[BX], CRATERA_LIVRE
     add BX, 2
@@ -2372,32 +2572,35 @@ cratera_zera:
 INICIA_CRATERAS endp
 
 ; ---------------------------------------------------------------------
-; ALEATORIO: PRNG xorshift de 16 bits (periodo 65535, semente != 0).
-; Entrada: CX = faixa (>= 1)
-; Saida:   AX = valor 0..CX-1
+; ALEATORIO: avanca o gerador xorshift de 16 bits e limita o resultado.
+; Entrada: CX = quantidade de valores possiveis, maior que zero. SEMENTE = estado
+;          atual do gerador.
+; Saida:   AX = valor entre zero e CX-1, SEMENTE atualizada.
 ; ---------------------------------------------------------------------
 ALEATORIO proc
     push DX
     push CX
 
+    ; Cada deslocamento mistura bits com XOR. Guarde o estado completo antes de
+    ; limitar o resultado pelo resto da divisao.
     mov AX, SEMENTE
     mov DX, AX
     mov CL, 7
     shl DX, CL
-    xor AX, DX               ; x ^= x << 7
+    xor AX, DX                                  ; x ^= x << 7
     mov DX, AX
     mov CL, 9
     shr DX, CL
-    xor AX, DX               ; x ^= x >> 9
+    xor AX, DX                                  ; x ^= x >> 9
     mov DX, AX
     mov CL, 8
     shl DX, CL
-    xor AX, DX               ; x ^= x << 8
+    xor AX, DX                                  ; x ^= x << 8
     mov SEMENTE, AX
 
     pop CX
     xor DX, DX
-    div CX                   ; DX = AX mod CX
+    div CX                                      ; DX = AX mod CX
     mov AX, DX
 
     pop DX
@@ -2405,8 +2608,9 @@ ALEATORIO proc
 ALEATORIO endp
 
 ; ---------------------------------------------------------------------
-; INICIA_ROCHAS: libera todos os slots e sorteia o instante da 1a
-; rocha (60..60+DIST_VAR_ROCHA-1 px).
+; INICIA_ROCHAS: esvazia a tabela e sorteia a distancia inicial das rochas.
+; Entrada: SEMENTE inicializada.
+; Saida:   Slots livres, ROCHA_PROX entre 60 e 60 + DIST_VAR_ROCHA - 1 pixels.
 ; ---------------------------------------------------------------------
 INICIA_ROCHAS proc
     push AX
@@ -2420,6 +2624,8 @@ rocha_zera:
     cmp BX, NUM_ROCHAS * 2
     jb  rocha_zera
 
+    ; A distancia inicial combina uma base fixa com a parte sorteada. A criacao
+    ; ainda depende da primeira cratera.
     mov CX, DIST_VAR_ROCHA
     call ALEATORIO
     add AX, 60
@@ -2432,8 +2638,10 @@ rocha_zera:
 INICIA_ROCHAS endp
 
 ; ---------------------------------------------------------------------
-; INICIA_ALIENS: libera todos os slots de alien e todos os tiros;
-;                arma o primeiro atraso de spawn.
+; INICIA_ALIENS: desativa as naves e os tiros e arma o primeiro intervalo.
+; Entrada: Nenhum parametro.
+; Saida:   Slots de naves e tiros inativos, ALIEN_ATRASO inicializado e
+;          ALIEN_HIT_FLAG = 0.
 ; ---------------------------------------------------------------------
 INICIA_ALIENS proc
     push AX
@@ -2441,9 +2649,11 @@ INICIA_ALIENS proc
     push BP
     push DI
 
-    xor BX, BX               ; BX = slot*2 (acesso a ALIENS_*)
-    xor BP, BP               ; BP = slot*TAM_TIRO (acesso a TIROS_ALIENS)
+    xor BX, BX                                  ; BX = slot*2 (acesso a ALIENS_*)
+    xor BP, BP                                  ; BP = slot*TAM_TIRO (acesso a TIROS_ALIENS)
 
+    ; BX percorre flags de duas em duas; BP percorre registros de tiro inteiros.
+    ; Ambos representam a mesma nave.
 ia_loop:
     mov word ptr ALIENS_ATIVO[BX], 0
     mov DI, offset TIROS_ALIENS
@@ -2465,17 +2675,10 @@ ia_loop:
 INICIA_ALIENS endp
 
 ; ---------------------------------------------------------------------
-; VERIFICA_TIRO_ROCHAS: checa colisao do tiro frontal (BX) com rochas.
-; Regras por tipo:
-;   tipo 0 (Rocha 1) - indestrutivel; consome o tiro, mantem a rocha.
-;   tipo 1 (Rocha 2) - destruida no 1o disparo.
-;   tipo 2 (Rocha 3) - destruida no 1o disparo.
-;   tipo 3 (Rocha 4) - destruida no 2o disparo (1o seta FLAG_ATINGIDA).
-; Entrada: BX = registro do tiro
-; Altera:  ROCHAS_X, ROCHAS_TIPO, SCORE_INICIAL, ASCII_X/Y
-;
-; NOTA: usar DI (nao BP) para indexar ROCHAS_X/ROCHAS_TIPO porque
-; [BP+disp] enderecaria SS (pilha) e nao DS (dados).
+; VERIFICA_TIRO_ROCHAS: testa o tiro frontal contra cada rocha ativa.
+; Entrada: BX = registro do tiro frontal, tabelas de rochas.
+; Saida:   No acerto, consome o tiro. A resistencia do tipo determina se marca a
+;          rocha ou libera o slot e soma SCORE_ROCHA.
 ; ---------------------------------------------------------------------
 VERIFICA_TIRO_ROCHAS proc
     push AX
@@ -2487,10 +2690,12 @@ VERIFICA_TIRO_ROCHAS proc
     cmp word ptr [BX + T_ATIVO], 0
     je  tr_fim
 
-    xor DI, DI               ; DI = slot * 2
+    xor DI, DI                                  ; DI = slot * 2
 
+    ; Ignore slots livres e monte o retangulo da rocha ocupada. A primeira
+    ; sobreposicao consome o tiro.
 tr_slot:
-    mov CX, ROCHAS_X[DI]     ; CX = X da rocha
+    mov CX, ROCHAS_X[DI]                        ; CX = X da rocha
     cmp CX, ROCHA_LIVRE
     je  tr_prox
 
@@ -2521,47 +2726,68 @@ tr_fim:
     ret
 
 tr_acertou:
-    ; Consome o tiro (restaura fundo sob o tiro)
-    ; guarda X da rocha (COPIA_FUNDO usa CX)
-    call RESTAURA_FUNDO_TIRO
     mov word ptr [BX + T_ATIVO], 0
 
-    ; Classifica
+    ; Um acerto em outra rocha interrompe a sequencia da rocha 4.
     mov SI, DI
-    shr SI, 1                ; SI = slot
+    shr SI, 1
+    mov AH, ROCHAS_TIPO[SI]
+    call LIMPA_ACERTOS_ROCHAS
+    mov ROCHAS_TIPO[SI], AH
+
+    ; Classifica pelo tipo, ignorando as flags do slot.
     mov AL, ROCHAS_TIPO[SI]
     and AL, MASCARA_TIPO
 
     cmp AL, 0
-    je  tr_fim               ; Rocha 1: indestrutivel
+    je  tr_fim                                  ; Rocha 1: indestrutivel
     cmp AL, 3
-    je  tr_rocha4            ; Rocha 4: 2 disparos
-    jmp tr_destroi           ; Rochas 2 e 3
+    je  tr_rocha4                               ; Rocha 4: 2 disparos
+    jmp tr_destroi                              ; Rochas 2 e 3
 
 tr_rocha4:
     test ROCHAS_TIPO[SI], FLAG_ATINGIDA
     jnz tr_destroi
     or  ROCHAS_TIPO[SI], FLAG_ATINGIDA
-    jmp tr_fim               ; 1o disparo: so marca
+    jmp tr_fim                                  ; 1o disparo: so marca
 
 tr_destroi:
-    mov ASCII_X, CX          ; CX = X da rocha
-    mov ASCII_Y, Y_ROCHA
-    mov AL, [TERRENO_PERTO_PALETA + 1]
-    mov CX, LARGURA_ROCHA
-    mov DX, ALTURA_ROCHA
-    call APAGAR_SPRITE
     mov word ptr ROCHAS_X[DI], ROCHA_LIVRE
     mov AX, SCORE_ROCHA
     call SOMAR_SCORE
     jmp tr_fim
 VERIFICA_TIRO_ROCHAS endp
 
-; BX = tiro. CX/DX = esquerda/direita, SI/AX = topo/base do alvo.
-; CF = 1 se houver sobreposicao. Preserva os registradores.
+; ---------------------------------------------------------------------
+; LIMPA_ACERTOS_ROCHAS: interrompe as sequencias de acertos nas rochas.
+; Entrada: Tabela ROCHAS_TIPO.
+; Saida:   FLAG_ATINGIDA limpa nos slots. Os outros bits sao preservados.
+; ---------------------------------------------------------------------
+LIMPA_ACERTOS_ROCHAS proc
+    push SI
+    mov SI, NUM_ROCHAS
+    ; Percorra a tabela de tras para frente. A mascara limpa somente a marca de
+    ; acerto, conservando tipo e flags de salto.
+limpa_acerto:
+    dec SI
+    and ROCHAS_TIPO[SI], 0FFH - FLAG_ATINGIDA
+    test SI, SI
+    jnz limpa_acerto
+    pop SI
+    ret
+LIMPA_ACERTOS_ROCHAS endp
+
+; ---------------------------------------------------------------------
+; TIRO_COLIDE_RETANGULO: testa a sobreposicao do tiro com um retangulo.
+; Entrada: BX = registro do tiro. CX/DX = esquerda/direita e SI/AX = topo/base do
+;          alvo. Direita e base sao limites exclusivos.
+; Saida:   CF = 1 se houver sobreposicao nos dois eixos. CF = 0 caso contrario.
+; ---------------------------------------------------------------------
 TIRO_COLIDE_RETANGULO proc
     push BP
 
+    ; Compare intervalos semiabertos: [X, X+largura) e [Y, Y+altura). Bordas apenas
+    ; encostadas nao compartilham pixels.
     mov BP, [BX + T_X]
     add BP, [BX + T_LARG]
     cmp BP, CX
@@ -2587,94 +2813,10 @@ tcr_fora:
 TIRO_COLIDE_RETANGULO endp
 
 ; ---------------------------------------------------------------------
-; COPIA_FUNDO: salva ou restaura um retangulo entre VRAM e buffer.
-; Entrada: AL = 0 salva (VRAM -> buffer); != 0 restaura
-;          SI = buffer (largura*altura bytes)
-;          CX = largura; DX = altura
-;          ASCII_X, ASCII_Y = canto superior esquerdo
-;          ES = 0A000H
-; ---------------------------------------------------------------------
-COPIA_FUNDO proc
-    push AX
-    push BX
-    push CX
-    push DX
-    push SI
-    push DI
-    push BP
-
-    mov BP, DX               ; altura
-    mov BH, AL               ; sentido da copia
-    mov AX, ASCII_Y
-    mov DX, LARG_TELA
-    mul DX                   ; AX = Y * 320
-    add AX, ASCII_X
-    mov DI, AX
-    mov DX, CX               ; DX = largura
-
-fundo_linha:
-    mov CX, DX
-
-fundo_pixel:
-    test BH, BH
-    jnz fundo_restaura
-    mov AL, ES:[DI]          ; salva
-    mov [SI], AL
-    jmp fundo_proximo
-
-fundo_restaura:
-    mov AL, [SI]             ; restaura
-    mov ES:[DI], AL
-
-fundo_proximo:
-    inc SI
-    inc DI
-    loop fundo_pixel
-
-    add DI, LARG_TELA
-    sub DI, DX
-    dec BP
-    jnz fundo_linha
-
-    pop BP
-    pop DI
-    pop SI
-    pop DX
-    pop CX
-    pop BX
-    pop AX
-    ret
-COPIA_FUNDO endp
-
-; BX = registro do tiro. Atualiza ASCII_X/Y e restaura o fundo salvo.
-; Preserva BX, AX, CX, DX e SI. ES continua apontando para a VRAM.
-RESTAURA_FUNDO_TIRO proc
-    push AX
-    push CX
-    push DX
-    push SI
-
-    mov AX, [BX + T_X]
-    mov ASCII_X, AX
-    mov AX, [BX + T_Y]
-    mov ASCII_Y, AX
-    lea SI, [BX + T_FUNDO]
-    mov CX, [BX + T_LARG]
-    mov DX, [BX + T_ALT]
-    mov AL, 1
-    call COPIA_FUNDO
-
-    pop SI
-    pop DX
-    pop CX
-    pop AX
-    ret
-RESTAURA_FUNDO_TIRO endp
-
-; ---------------------------------------------------------------------
-; SOMAR_SCORE: soma um valor a SCORE_INICIAL (max 9999) e atualiza
-; a barra de status.
-; Entrada: AX = valor a somar; ES = 0A000H
+; SOMAR_SCORE: soma pontos ao placar de quatro digitos.
+; Entrada: AX = pontos a adicionar, SCORE_INICIAL = digitos atuais.
+; Saida:   SCORE_INICIAL atualizado em ASCII, limitado a 9999 para os incrementos
+;          do jogo.
 ; ---------------------------------------------------------------------
 SOMAR_SCORE proc
     push AX
@@ -2683,11 +2825,13 @@ SOMAR_SCORE proc
     push DX
     push SI
 
-    mov SI, AX               ; SI = incremento
+    mov SI, AX                                  ; SI = incremento
     xor AX, AX
     xor BX, BX
 
-soma_le:                     ; AX = numero lido dos 4 digitos
+    ; Para incluir cada digito ASCII, multiplique o acumulado por dez e some o
+    ; valor do caractere menos '0'.
+soma_le:                                        ; AX = numero lido dos 4 digitos
     mov CX, 10
     mul CX
     mov CL, SCORE_INICIAL[BX]
@@ -2704,9 +2848,11 @@ soma_le:                     ; AX = numero lido dos 4 digitos
     mov AX, 9999
 
 soma_converte:
-    mov BX, 3                ; escreve do menos significativo
+    mov BX, 3                                   ; escreve do menos significativo
     mov CX, 10
 
+    ; DIV produz um digito no resto e deixa o quociente para a proxima divisao.
+    ; Escreva das unidades para os milhares.
 soma_escreve:
     xor DX, DX
     div CX
@@ -2715,7 +2861,6 @@ soma_escreve:
     dec BX
     jns soma_escreve
 
-    call DESENHA_SCORE
 
     pop SI
     pop DX
@@ -2726,10 +2871,9 @@ soma_escreve:
 SOMAR_SCORE endp
 
 ; ---------------------------------------------------------------------
-; VERIFICA_TIRO_CIMA_ALIENS: checa colisao do TIRO_CIMA com aliens.
-; Ao acertar: consome o tiro e destroi o alien (+SCORE_ALIEN).
-; Deve ser chamada ANTES de ATUALIZA_TIRO (o ultimo passo, que atinge
-; T_LIM, ainda deve ser testado contra o alien).
+; VERIFICA_TIRO_CIMA_ALIENS: testa o tiro superior contra as naves ativas.
+; Entrada: TIRO_CIMA e tabelas de posicao e atividade das naves.
+; Saida:   No primeiro acerto, desativa tiro e nave e soma SCORE_ALIEN.
 ; ---------------------------------------------------------------------
 VERIFICA_TIRO_CIMA_ALIENS proc
     push AX
@@ -2745,8 +2889,10 @@ VERIFICA_TIRO_CIMA_ALIENS proc
     jmp vtca_fim
 vtca_continue:
 
-    xor DI, DI               ; DI = slot*2
+    xor DI, DI                                  ; DI = slot*2
 
+    ; Somente naves ativas participam da busca. O primeiro retangulo atingido
+    ; encerra a varredura.
 vtca_loop:
     cmp word ptr ALIENS_ATIVO[DI], 0
     je  vtca_next
@@ -2772,19 +2918,8 @@ vtca_next:
     jmp vtca_loop
 
 vtca_hit:
-    ; Consome o tiro (devolve o fundo e marca inativo)
-    call RESTAURA_FUNDO_TIRO
+    ; O quadro ja recebeu o fundo limpo. Desativar o slot impede o redesenho.
     mov word ptr [BX + T_ATIVO], 0
-
-    ; Apaga o alien
-    mov AX, ALIENS_X[DI]
-    mov ASCII_X, AX
-    mov AX, ALIENS_Y[DI]
-    mov ASCII_Y, AX
-    mov AL, COR_FUNDO
-    mov CX, LARGURA_NAVE
-    mov DX, ALTURA_NAVE
-    call APAGAR_SPRITE
     mov word ptr ALIENS_ATIVO[DI], 0
 
     mov AX, SCORE_ALIEN
@@ -2801,9 +2936,10 @@ vtca_fim:
 VERIFICA_TIRO_CIMA_ALIENS endp
 
 ; ---------------------------------------------------------------------
-; ATUALIZA_TIRO: avanca 1 quadro do tiro: restaura fundo, move, e
-; desenha; desativa ao atingir T_LIM.
-; Entrada: BX = registro do tiro; ES = 0A000H
+; ATUALIZA_TIRO: move um projetil do jipe e verifica o limite do percurso.
+; Entrada: BX = registro do tiro, ES = segmento do quadro.
+; Saida:   Posicao atualizada. Tiro em voo desenhado ou registro desativado ao
+;          atingir o limite.
 ; ---------------------------------------------------------------------
 ATUALIZA_TIRO proc
     push AX
@@ -2814,7 +2950,6 @@ ATUALIZA_TIRO proc
     cmp word ptr [BX + T_ATIVO], 0
     je  tiro_fim
 
-    call RESTAURA_FUNDO_TIRO ; restaura fundo
 
     mov AX, [BX + T_X]
     add AX, [BX + T_DX]
@@ -2823,16 +2958,24 @@ ATUALIZA_TIRO proc
     add AX, [BX + T_DY]
     mov [BX + T_Y], AX
 
+    ; DX do registro distingue os canhoes. O frontal mede o alcance em X; o
+    ; superior compara Y com a linha limite.
     cmp word ptr [BX + T_DX], 0
     je  tiro_vertical
 
-    mov AX, [BX + T_X]       ; tiro frontal
+    mov AX, [BX + T_X]                          ; tiro frontal
     cmp AX, [BX + T_LIM]
-    jge tiro_desativa
-    jmp tiro_desenha
+    jl  tiro_desenha
+    mov AX, [BX + T_LIM]
+    mov [BX + T_X], AX                          ; inclui o ultimo pixel de alcance na colisao
+    call VERIFICA_TIRO_ROCHAS
+    cmp word ptr [BX + T_ATIVO], 0
+    je  tiro_fim
+    call LIMPA_ACERTOS_ROCHAS                   ; tiro perdido interrompe a sequencia
+    jmp tiro_desativa
 
 tiro_vertical:
-    mov AX, [BX + T_Y]       ; tiro superior
+    mov AX, [BX + T_Y]                          ; tiro superior
     cmp AX, [BX + T_LIM]
     jle tiro_desativa
 
@@ -2852,28 +2995,26 @@ tiro_fim:
 ATUALIZA_TIRO endp
 
 ; ---------------------------------------------------------------------
-; DESENHA_TIRO: salva o fundo sob o tiro e desenha o retangulo colorido.
-; Entrada: BX = registro do tiro; ES = 0A000H
+; DESENHA_TIRO: desenha o projetil como um retangulo colorido.
+; Entrada: BX = registro com posicao, tamanho e cor, ES = destino.
+; Saida:   Retangulo do tiro desenhado no quadro.
 ; ---------------------------------------------------------------------
 DESENHA_TIRO proc
     push AX
     push CX
     push DX
-    push SI
 
+    ; Copie do registro para a interface de PREENCHER_LINHAS. O mesmo desenho serve
+    ; aos tiros do jipe e das naves.
     mov AX, [BX + T_X]
     mov ASCII_X, AX
     mov AX, [BX + T_Y]
     mov ASCII_Y, AX
-    lea SI, [BX + T_FUNDO]
     mov CX, [BX + T_LARG]
     mov DX, [BX + T_ALT]
-    xor AL, AL               ; 0 = salvar
-    call COPIA_FUNDO
     mov AL, [BX + T_COR]
     call PREENCHER_LINHAS
 
-    pop SI
     pop DX
     pop CX
     pop AX
@@ -2881,10 +3022,10 @@ DESENHA_TIRO proc
 DESENHA_TIRO endp
 
 ; ---------------------------------------------------------------------
-; ATUALIZA_TIROS_ALIENS: move todos os tiros alienigenas 1 passo para
-; baixo. Checa jipe ANTES de superficie (o jipe fica acima do chao;
-; se fosse o contrario, o tiro morreria na superficie sem vitimar).
-; Saida: CF = 1 se algum tiro acertou o jipe
+; ATUALIZA_TIROS_ALIENS: move os tiros inimigos e testa jipe e superficie.
+; Entrada: TIROS_ALIENS, posicao e altura do jipe, ES = segmento do quadro.
+; Saida:   Tiros em voo atualizados. CF e ALIEN_HIT_FLAG valem 1 se algum tiro
+;          atingiu o jipe e 0 caso contrario.
 ; ---------------------------------------------------------------------
 ATUALIZA_TIROS_ALIENS proc
     push AX
@@ -2897,9 +3038,11 @@ ATUALIZA_TIROS_ALIENS proc
 
     mov ALIEN_HIT_FLAG, 0
 
-    xor BX, BX               ; slot*2 (contador do loop)
-    xor BP, BP               ; slot*TAM_TIRO
+    xor BX, BX                                  ; slot*2 (contador do loop)
+    xor BP, BP                                  ; slot*TAM_TIRO
 
+    ; O tiro tem seu proprio indicador de atividade. Ele continua em voo mesmo
+    ; depois de a nave que o lancou sair.
 ata_loop:
     mov DI, offset TIROS_ALIENS
     add DI, BP
@@ -2909,43 +3052,24 @@ ata_loop:
     jmp ata_next
 ata_process:
 
-    ; Restaura fundo sob o tiro
-    push BX
-    mov BX, DI
-    call RESTAURA_FUNDO_TIRO
-    pop BX
-
     ; Move para baixo
     mov AX, [DI + T_Y]
     add AX, VEL_TIRO_ALIEN
     mov [DI + T_Y], AX
 
-    ; ---- colisao horizontal com o jipe ----
+    ; Usa os mesmos limites exclusivos dos tiros do jipe.
+    push BX
+    mov BX, DI
     mov CX, JIPE_X
-    add CX, LARGURA_JIPE
-    mov AX, [DI + T_X]
-    cmp AX, CX
-    jge ata_check_surface
-
-    mov DX, [DI + T_X]
-    add DX, [DI + T_LARG]
-    cmp DX, JIPE_X
-    jle ata_check_surface
-
-    ; ---- colisao vertical com o jipe ----
-    mov CX, JIPE_Y
-    sub CX, JIPE_ALT         ; jipe_top
-    mov AX, [DI + T_Y]
-    add AX, [DI + T_ALT]     ; shot_bottom
-    cmp AX, CX
-    jl  ata_check_surface
-
-    mov DX, JIPE_Y
-    sub DX, JIPE_ALT
-    add DX, ALTURA_JIPE      ; jipe_bottom
-    mov AX, [DI + T_Y]       ; shot_top
-    cmp AX, DX
-    jge ata_check_surface
+    mov DX, CX
+    add DX, LARGURA_JIPE
+    mov SI, JIPE_Y
+    sub SI, JIPE_ALT
+    mov AX, SI
+    add AX, ALTURA_JIPE
+    call TIRO_COLIDE_RETANGULO
+    pop BX
+    jnc ata_check_surface
 
     ; Acertou o jipe
     mov word ptr [DI + T_ATIVO], 0
@@ -2955,14 +3079,11 @@ ata_process:
 ata_check_surface:
     mov AX, [DI + T_Y]
     add AX, [DI + T_ALT]
+    dec AX                                      ; ultima linha ocupada pelo tiro
     cmp AX, Y_SUPERFICIE
     jge ata_deactivate
 
     ; Redesenha na nova posicao
-    mov AX, [DI + T_X]
-    mov ASCII_X, AX
-    mov AX, [DI + T_Y]
-    mov ASCII_Y, AX
     push BX
     mov BX, DI
     call DESENHA_TIRO
@@ -2998,11 +3119,9 @@ ata_ret:
 ATUALIZA_TIROS_ALIENS endp
 
 ; ---------------------------------------------------------------------
-; ROLA_CRATERAS: cria crateras por distancia e move todas VEL_CHAO px
-; para a esquerda; as que saem liberam o slot.
-; Entrada: ES = 0A000H
-; Altera:  CRATERAS_X, CRATERAS_TIPO, CRATERA_PROX, SEMENTE,
-;          ASCII_X, ASCII_Y, FUNDO_COR
+; ROLA_CRATERAS: controla a geracao por distancia e desloca as crateras.
+; Entrada: CRATERA_PROX, tabela de crateras e ES = segmento do quadro.
+; Saida:   Distancia e posicoes atualizadas. Slots liberados na saida da tela.
 ; ---------------------------------------------------------------------
 ROLA_CRATERAS proc
     push AX
@@ -3012,6 +3131,8 @@ ROLA_CRATERAS proc
     push SI
     push DI
 
+    ; A espera e medida em pixels percorridos. So rearme a distancia depois de
+    ; criar uma cratera com sucesso.
     sub CRATERA_PROX, VEL_CHAO
     jg  rola_move
     call CRIA_CRATERA
@@ -3028,7 +3149,7 @@ rola_proximo:
     cmp CRATERAS_X[BX], CRATERA_LIVRE
     je  rola_seguinte
 
-    push BX                  ; guarda slot (BX vira paleta)
+    push BX                                     ; guarda slot (BX vira paleta)
     mov AX, CRATERAS_X[BX]
     mov ASCII_X, AX
     mov ASCII_Y, Y_SUPERFICIE
@@ -3044,7 +3165,6 @@ rola_proximo:
     mov CX, LARGURA_CRATERA
     mov DX, ALTURA_CRATERA
     mov DI, MODO_SOME
-    mov FUNDO_COR, COR_SUPERFICIE
     mov AX, -VEL_CHAO
     call MOVER_SPRITE
     pop BX
@@ -3071,9 +3191,10 @@ rola_seguinte:
 ROLA_CRATERAS endp
 
 ; ---------------------------------------------------------------------
-; CRIA_CRATERA: cria uma cratera na borda direita, se houver slot e
-; espaco livre.
-; Saida: CF = 0 criada; CF = 1 sem espaco/slot
+; CRIA_CRATERA: tenta criar uma cratera na entrada direita do percurso.
+; Entrada: Tabelas de obstaculos e SEMENTE.
+; Saida:   CF = 0 se criou e marcou CRATERA_GERADA. CF = 1 se a borda ou a tabela
+;          estiver ocupada.
 ; ---------------------------------------------------------------------
 CRIA_CRATERA proc
     push AX
@@ -3083,20 +3204,18 @@ CRIA_CRATERA proc
     call ESPACO_LIVRE
     jc  cria_fim
 
-    xor BX, BX
-cria_busca:
-    cmp CRATERAS_X[BX], CRATERA_LIVRE
-    je  cria_achou
-    add BX, 2
-    cmp BX, NUM_CRATERAS * 2
-    jb  cria_busca
-    stc
-    jmp cria_fim
+    mov BX, offset CRATERAS_X
+    mov CX, NUM_CRATERAS
+    call BUSCA_SLOT_LIVRE
+    jc  cria_fim
+    ; Converta o endereco encontrado em deslocamento na tabela de words. Dividir
+    ; por dois seleciona o tipo na tabela de bytes.
+    sub BX, offset CRATERAS_X                   ; indice em bytes dentro da tabela
 
-cria_achou:
+    mov CRATERA_GERADA, 1
     mov CRATERAS_X[BX], LARG_TELA
     mov CX, 3
-    call ALEATORIO           ; 0..2
+    call ALEATORIO                              ; 0..2
     shr BX, 1
     mov CRATERAS_TIPO[BX], AL
     clc
@@ -3109,13 +3228,36 @@ cria_fim:
 CRIA_CRATERA endp
 
 ; ---------------------------------------------------------------------
-; ESPACO_LIVRE: confere a borda direita (X > LARG_TELA - DIST_ENTRE_OBST).
-; Saida: CF = 0 livre; CF = 1 ocupado
+; BUSCA_SLOT_LIVRE: procura a primeira posicao livre na tabela de obstaculos.
+; Entrada: DS:BX = inicio da tabela de words, CX = quantidade positiva.
+; Saida:   CF = 0 e BX aponta para o slot livre. CF = 1 se a tabela esta cheia.
+; ---------------------------------------------------------------------
+BUSCA_SLOT_LIVRE proc
+    ; O valor 8000h marca uma vaga. BX percorre words e LOOP limita a busca a
+    ; quantidade de registros informada.
+busca_slot:
+    cmp word ptr [BX], CRATERA_LIVRE            ; ambas as tabelas usam 8000h
+    je  busca_achou
+    add BX, 2
+    loop busca_slot
+    stc
+    ret
+busca_achou:
+    clc
+    ret
+BUSCA_SLOT_LIVRE endp
+
+; ---------------------------------------------------------------------
+; ESPACO_LIVRE: verifica a distancia dos obstaculos ate a borda direita.
+; Entrada: Tabelas CRATERAS_X e ROCHAS_X.
+; Saida:   CF = 0 se ha espaco para criar um obstaculo, CF = 1 se ocupado.
 ; ---------------------------------------------------------------------
 ESPACO_LIVRE proc
     push BX
 
     xor BX, BX
+    ; Examine primeiro as crateras e depois as rochas. A comparacao com sinal trata
+    ; o marcador 8000h como negativo.
 livre_crateras:
     cmp CRATERAS_X[BX], LARG_TELA - DIST_ENTRE_OBST
     jg  livre_ocupado
@@ -3143,10 +3285,9 @@ livre_fim:
 ESPACO_LIVRE endp
 
 ; ---------------------------------------------------------------------
-; ROLA_ROCHAS: cria rochas por distancia e move PASSO_CHAO px para a
-; esquerda; as que saem liberam o slot.
-; Entrada: PASSO_CHAO (constante de .data); ES = 0A000H
-; Altera:  ROCHAS_X, ROCHAS_TIPO, ROCHA_PROX, SEMENTE, ASCII_X/Y, FUNDO_COR
+; ROLA_ROCHAS: controla a geracao por distancia e desloca as rochas.
+; Entrada: ROCHA_PROX, tabela de rochas e ES = segmento do quadro.
+; Saida:   Distancia e posicoes atualizadas. Slots liberados na saida da tela.
 ; ---------------------------------------------------------------------
 ROLA_ROCHAS proc
     push AX
@@ -3156,8 +3297,7 @@ ROLA_ROCHAS proc
     push SI
     push DI
 
-    mov AX, PASSO_CHAO
-    sub ROCHA_PROX, AX
+    sub ROCHA_PROX, VEL_CHAO
     jg  rocha_move
     call CRIA_ROCHA
     jc  rocha_move
@@ -3167,10 +3307,10 @@ ROLA_ROCHAS proc
     mov ROCHA_PROX, AX
 
 rocha_move:
-    mov AL, [TERRENO_PERTO_PALETA + 1]
-    mov FUNDO_COR, AL
     xor BX, BX
 
+    ; Separe o tipo das flags antes de calcular o endereco do bitmap. CF de
+    ; MOVER_SPRITE indica quando liberar o slot.
 rocha_proximo:
     cmp ROCHAS_X[BX], ROCHA_LIVRE
     je  rocha_seguinte
@@ -3191,8 +3331,7 @@ rocha_proximo:
     mov CX, LARGURA_ROCHA
     mov DX, ALTURA_ROCHA
     mov DI, MODO_SOME
-    mov AX, PASSO_CHAO
-    neg AX
+    mov AX, -VEL_CHAO
     call MOVER_SPRITE
     pop BX
     jc  rocha_libera
@@ -3218,35 +3357,41 @@ rocha_seguinte:
 ROLA_ROCHAS endp
 
 ; ---------------------------------------------------------------------
-; CRIA_ROCHA: cria uma rocha na borda direita, se houver slot/espaco.
-; Saida: CF = 0 criada; CF = 1 sem espaco/slot
+; CRIA_ROCHA: tenta colocar uma rocha no intervalo entre crateras.
+; Entrada: CRATERA_GERADA, CRATERA_PROX, tabelas de obstaculos e SEMENTE.
+; Saida:   CF = 0 se criou uma das quatro variantes. CF = 1 se as condicoes de
+;          geracao impedem a criacao.
 ; ---------------------------------------------------------------------
 CRIA_ROCHA proc
     push AX
     push BX
     push CX
 
+    ; Exija uma cratera anterior e folga ate a proxima. So depois procure uma vaga
+    ; e sorteie a variante.
+    cmp CRATERA_GERADA, 0                       ; a primeira rocha precisa de uma cratera anterior
+    je  rocha_sem_espaco
+    cmp CRATERA_PROX, DIST_ENTRE_OBST + LARGURA_ROCHA
+    jl  rocha_sem_espaco                        ; reserva espaco antes da proxima cratera
     call ESPACO_LIVRE
     jc  rocha_cria_fim
 
-    xor BX, BX
-rocha_busca:
-    cmp ROCHAS_X[BX], ROCHA_LIVRE
-    je  rocha_achou
-    add BX, 2
-    cmp BX, NUM_ROCHAS * 2
-    jb  rocha_busca
-    stc
-    jmp rocha_cria_fim
+    mov BX, offset ROCHAS_X
+    mov CX, NUM_ROCHAS
+    call BUSCA_SLOT_LIVRE
+    jc  rocha_cria_fim
+    sub BX, offset ROCHAS_X                     ; indice em bytes dentro da tabela
 
-rocha_achou:
     mov ROCHAS_X[BX], LARG_TELA
     mov CX, 4
-    call ALEATORIO           ; 0..3
+    call ALEATORIO                              ; 0..3
     shr BX, 1
     mov ROCHAS_TIPO[BX], AL
     clc
 
+    jmp rocha_cria_fim
+rocha_sem_espaco:
+    stc
 rocha_cria_fim:
     pop CX
     pop BX
@@ -3255,8 +3400,10 @@ rocha_cria_fim:
 CRIA_ROCHA endp
 
 ; ---------------------------------------------------------------------
-; ROLA_ALIENS: move todos os aliens ativos 1px para a esquerda; se o
-; grupo inteiro saiu/destruiu, conta atraso e cria o proximo grupo.
+; ROLA_ALIENS: move as naves ativas ou conta o atraso para o novo grupo.
+; Entrada: Tabelas das naves, ALIEN_ATRASO e ES = segmento do quadro.
+; Saida:   Posicoes e slots atualizados. Um grupo novo so e criado depois de todos
+;          os slots ficarem livres e o atraso terminar.
 ; ---------------------------------------------------------------------
 ROLA_ALIENS proc
     push AX
@@ -3275,6 +3422,8 @@ ra_check:
     cmp BX, NUM_ALIENS*2
     jb  ra_check
 
+    ; Este caminho so e alcancado quando a varredura termina sem encontrar naves
+    ; ativas.
     dec ALIEN_ATRASO
     jg  ra_fim
     call CRIA_GRUPO_ALIENS
@@ -3287,7 +3436,7 @@ ra_loop:
     cmp word ptr ALIENS_ATIVO[BX], 0
     je  ra_next
 
-    push BX                  ; guarda slot*2 (BX vira paleta em MOVER_SPRITE)
+    push BX                                     ; guarda slot*2 (BX vira paleta em MOVER_SPRITE)
     mov AX, ALIENS_X[BX]
     mov ASCII_X, AX
     mov AX, ALIENS_Y[BX]
@@ -3295,11 +3444,11 @@ ra_loop:
 
     ; Seleciona a variacao do sprite: NAVES_SPRITE + tipo * TAM_NAVE
     mov SI, BX
-    shr SI, 1                ; SI = slot
+    shr SI, 1                                   ; SI = slot
     mov AL, ALIENS_TIPO[SI]
     xor AH, AH
     mov DX, TAM_NAVE
-    mul DX                   ; AX = tipo * TAM_NAVE
+    mul DX                                      ; AX = tipo * TAM_NAVE
     mov SI, offset NAVES_SPRITE
     add SI, AX
 
@@ -3307,12 +3456,11 @@ ra_loop:
     mov CX, LARGURA_NAVE
     mov DX, ALTURA_NAVE
     mov DI, MODO_SOME
-    mov FUNDO_COR, COR_FUNDO
     mov AX, -VEL_ALIEN
     call MOVER_SPRITE
     pop BX
 
-    jc  ra_free              ; saiu pela esquerda
+    jc  ra_free                                 ; saiu pela esquerda
     mov AX, ASCII_X
     mov ALIENS_X[BX], AX
     jmp ra_next
@@ -3336,9 +3484,10 @@ ra_fim:
 ROLA_ALIENS endp
 
 ; ---------------------------------------------------------------------
-; CRIA_GRUPO_ALIENS: sorteia 1..3 aliens do mesmo tipo. O Y de cada
-; alien e' sorteado em [prev+30, 100 - (N-1-i)*30], garantindo dist
-; >= 30 px sem tentativa-e-erro.
+; CRIA_GRUPO_ALIENS: sorteia quantidade, tipo comum e posicoes da formacao.
+; Entrada: Slots de naves livres e SEMENTE inicializada.
+; Saida:   De 1 a NUM_ALIENS slots ativos, com X, Y e tipo definidos. ALIEN_ATRASO
+;          preparado para o proximo grupo.
 ; ---------------------------------------------------------------------
 CRIA_GRUPO_ALIENS proc
     push AX
@@ -3352,50 +3501,49 @@ CRIA_GRUPO_ALIENS proc
     ; Sorteia o tipo (0..2) do grupo
     mov CX, 3
     call ALEATORIO
-    mov SI, AX               ; SI = tipo (0..2)
+    mov SI, AX                                  ; SI = tipo (0..2)
 
-    ; Sorteia N (1..3)
-    mov CX, 3
+    ; A formacao entra pela direita e cabe em meia tela, incluindo a
+    ; largura da ultima nave. Reserva 30 px livres para cada intervalo.
+    mov CX, NUM_ALIENS
     call ALEATORIO
     inc AX
-    mov BP, AX               ; BP = N
-
-    xor DI, DI               ; DI = I (0..N-1)
-    xor BX, BX               ; BX = I*2
+    mov BP, AX                                  ; numero de naves
+    xor DI, DI
+    xor BX, BX
 
 cga_loop:
-    ; min_y = (I==0) ? ALIEN_Y_MIN : ALIENS_Y[I-1] + ALIEN_DIST_MIN
+    mov DX, LARG_TELA
     test DI, DI
-    jz  cga_first
-    mov AX, ALIENS_Y[BX-2]
-    add AX, ALIEN_DIST_MIN
-    jmp cga_min_ready
-cga_first:
-    mov AX, ALIEN_Y_MIN
-cga_min_ready:
-    push AX                  ; guarda min_y (o mul sobrescreve DX)
+    jz  cga_limites
+    mov DX, ALIENS_X[BX-2]
+    add DX, LARGURA_NAVE + ALIEN_DIST_MIN
 
+    ; DX guarda o menor X permitido. Reduza o maior X pelo espaco das naves que
+    ; faltam e sorteie dentro do intervalo inclusivo.
+cga_limites:
     mov AX, BP
     sub AX, DI
-    dec AX                   ; AX = N-1-I
-    mov CX, ALIEN_DIST_MIN
-    mul CX                   ; AX = (N-1-I) * 30 (DX = 0)
-    mov CX, ALIEN_Y_MAX
-    sub CX, AX               ; CX = max_y
-
-    pop DX                   ; DX = min_y
+    dec AX                                      ; quantas naves ainda precisam caber
+    mov CX, LARGURA_NAVE + ALIEN_DIST_MIN
+    push DX
+    mul CX
+    pop DX
+    mov CX, LARG_TELA + LARG_TELA / 2 - LARGURA_NAVE + 1
+    sub CX, AX
     sub CX, DX
-    inc CX                   ; CX = range = max_y - min_y + 1
+    call ALEATORIO
+    add AX, DX
+    mov ALIENS_X[BX], AX
 
-    call ALEATORIO           ; AX = 0..range-1 (preserva BX, DX, SI, DI, BP)
-    add AX, DX               ; AX = Y valido
-
+    mov CX, ALIEN_Y_MAX - ALIEN_Y_MIN + 1
+    call ALEATORIO
+    add AX, ALIEN_Y_MIN
     mov ALIENS_Y[BX], AX
-    mov word ptr ALIENS_X[BX], LARG_TELA
     mov word ptr ALIENS_ATIVO[BX], 1
 
-    mov AX, SI               ; tipo do grupo
-    mov ALIENS_TIPO[DI], AL  ; DI = I (byte-index)
+    mov AX, SI                                  ; tipo do grupo
+    mov ALIENS_TIPO[DI], AL                     ; DI indexa a tabela de tipos em bytes
 
     add BX, 2
     inc DI
@@ -3415,9 +3563,9 @@ cga_min_ready:
 CRIA_GRUPO_ALIENS endp
 
 ; ---------------------------------------------------------------------
-; ATIRA_ALIENS: cada alien ativo dispara se o seu slot de tiro estiver
-; livre. So dispara com alien totalmente visivel (COPIA_FUNDO nao
-; recorta -- um disparo de fora da tela corromperia a VRAM).
+; ATIRA_ALIENS: lanca um tiro sob cada nave apta a disparar.
+; Entrada: Naves ativas, registros TIROS_ALIENS e ES = segmento do quadro.
+; Saida:   Um tiro iniciado por nave totalmente visivel com registro livre.
 ; ---------------------------------------------------------------------
 ATIRA_ALIENS proc
     push AX
@@ -3428,8 +3576,8 @@ ATIRA_ALIENS proc
     push DI
     push BP
 
-    xor BX, BX               ; slot*2
-    xor BP, BP               ; slot*TAM_TIRO
+    xor BX, BX                                  ; slot*2
+    xor BP, BP                                  ; slot*TAM_TIRO
 
 atira_loop:
     cmp word ptr ALIENS_ATIVO[BX], 0
@@ -3441,6 +3589,8 @@ atira_continue:
     cmp AX, 0
     jge atira_x_ok
     jmp atira_next
+    ; O lado esquerdo ja entrou. Confira a borda direita e o registro de tiro antes
+    ; de disparar.
 atira_x_ok:
 
     add AX, LARGURA_NAVE
@@ -3490,11 +3640,10 @@ atira_next:
 ATIRA_ALIENS endp
 
 ; ---------------------------------------------------------------------
-; VERIFICA_SALTO_CRATERAS: compara as rodas do jipe com as colunas do
-; buraco de cada cratera visivel.
-;   - roda sobre buraco + jipe no chao  = colisao (CF = 1)
-;   - roda sobre buraco + jipe no ar    = marca FLAG_SOBREVOADA
-;   - buraco inteiro atras + salto ok   = +SCORE_CRATERA (uma vez)
+; VERIFICA_SALTO_CRATERAS: compara a faixa das rodas com a abertura das crateras.
+; Entrada: JIPE_X, JIPE_ALT e tabelas de crateras.
+; Saida:   CF = 1 na colisao no solo. CF = 0 sem colisao. Travessia completa no ar
+;          rende SCORE_CRATERA uma vez.
 ; ---------------------------------------------------------------------
 VERIFICA_SALTO_CRATERAS proc
     push AX
@@ -3504,35 +3653,35 @@ VERIFICA_SALTO_CRATERAS proc
     push SI
     push DI
 
-    xor BX, BX               ; BX = slot * 2
+    xor BX, BX                                  ; BX = slot * 2
 
 verif_slot:
     mov DI, CRATERAS_X[BX]
     cmp DI, CRATERA_LIVRE
     je  verif_prox
     mov SI, BX
-    shr SI, 1                ; SI = slot
+    shr SI, 1                                   ; SI = slot
 
     mov AL, CRATERAS_TIPO[SI]
     test AL, FLAG_PONTUADA
     jnz verif_prox
     and AL, MASCARA_TIPO
-    call ACHA_BURACO         ; AL = 1a coluna, AH = ultima
+    call ACHA_BURACO                            ; AL = 1a coluna, AH = ultima
     jc  verif_prox
 
     mov CL, AH
     xor CH, CH
-    add CX, DI               ; CX = X fim do buraco
+    add CX, DI                                  ; CX = X fim do buraco
     xor AH, AH
-    add AX, DI               ; AX = X inicio do buraco
+    add AX, DI                                  ; AX = X inicio do buraco
 
     cmp CX, JIPE_X
-    jl  verif_passou         ; buraco ja atras do jipe
+    jl  verif_passou                            ; buraco ja atras do jipe
 
     mov DX, JIPE_X
     add DX, RODA_FIM_JIPE
     cmp AX, DX
-    jg  verif_prox           ; buraco ainda a frente
+    jg  verif_prox                              ; buraco ainda a frente
 
     cmp JIPE_ALT, 0
     jne verif_ar
@@ -3543,6 +3692,8 @@ verif_ar:
     or  CRATERAS_TIPO[SI], FLAG_SOBREVOADA
     jmp verif_prox
 
+    ; Quando a abertura fica atras das rodas, a marca de sobrevoo autoriza os
+    ; pontos. FLAG_PONTUADA evita repetir a soma.
 verif_passou:
     test CRATERAS_TIPO[SI], FLAG_SOBREVOADA
     jz  verif_prox
@@ -3570,11 +3721,10 @@ verif_fim:
 VERIFICA_SALTO_CRATERAS endp
 
 ; ---------------------------------------------------------------------
-; ACHA_BURACO: localiza as colunas do digito '3' (buraco) no bitmap
-; da variacao de cratera.
-; Entrada: AL = variacao (0..2)
-; Saida:   CF = 0: AL = 1a coluna, AH = ultima coluna com '3'
-;          CF = 1: nao ha '3' no bitmap
+; ACHA_BURACO: procura o digito '3' no bitmap da variante de cratera.
+; Entrada: AL = indice da variante, de 0 a 2.
+; Saida:   CF = 0 com primeira coluna em AL e ultima em AH (inclusivas). CF = 1 se
+;          o bitmap nao contiver abertura.
 ; ---------------------------------------------------------------------
 ACHA_BURACO proc
     push BX
@@ -3587,13 +3737,15 @@ ACHA_BURACO proc
     mov SI, offset CRATERAS_SPRITE
     add SI, AX
 
-    mov BH, 0FFH             ; menor coluna com '3'
-    xor BL, BL               ; maior coluna com '3'
+    mov BH, 0FFH                                ; menor coluna com '3'
+    xor BL, BL                                  ; maior coluna com '3'
     mov DL, ALTURA_CRATERA
 
 buraco_linha:
     xor DH, DH
 
+    ; DH percorre colunas locais. Para cada '3', atualize os extremos em BH e BL,
+    ; inclusive entre linhas diferentes.
 buraco_pixel:
     cmp byte ptr [SI], '3'
     jne buraco_seguinte
@@ -3631,9 +3783,10 @@ buraco_fim:
 ACHA_BURACO endp
 
 ; ---------------------------------------------------------------------
-; VERIFICA_ROCHAS: colisao jipe x rochas; pontua rochas ultrapassadas
-; com salto limpo.
-; Saida: CF = 1 colisao; CF = 0 sem colisao
+; VERIFICA_ROCHAS: testa contato com rochas e pontua saltos completos.
+; Entrada: JIPE_X, JIPE_ALT e tabelas de rochas.
+; Saida:   CF = 1 em contato com pixels solidos. CF = 0 sem colisao. Uma rocha
+;          sobrevoada rende SCORE_ROCHA ao ficar para tras.
 ; ---------------------------------------------------------------------
 VERIFICA_ROCHAS proc
     push AX
@@ -3654,22 +3807,23 @@ rver_slot:
     test ROCHAS_TIPO[SI], FLAG_PONTUADA
     jnz rver_prox
 
-    mov AX, DI
-    add AX, MARGEM_ROCHA
     mov CX, DI
-    add CX, LARGURA_ROCHA - MARGEM_ROCHA
+    add CX, LARGURA_ROCHA
     mov DX, JIPE_X
-    add DX, MARGEM_JIPE_ROCHA
     cmp CX, DX
-    jle rver_passou          ; rocha atras do jipe
+    jle rver_passou                             ; rocha atras do jipe
 
     mov DX, JIPE_X
-    add DX, LARGURA_JIPE - MARGEM_JIPE_ROCHA
-    cmp AX, DX
-    jge rver_prox            ; rocha a frente
+    add DX, LARGURA_JIPE
+    cmp DI, DX
+    jge rver_prox                               ; rocha a frente
 
-    cmp JIPE_ALT, ALT_LIVRE_ROCHA
-    jl  rver_colide
+    ; Os retangulos se cruzam em X. So ha impacto se dois pixels
+    ; opacos se encontrarem (a rocha menor tem seis linhas vazias).
+    call COLISAO_BITMAP_ROCHA
+    jc  rver_colide
+    cmp JIPE_ALT, 0
+    je  rver_prox
     or  ROCHAS_TIPO[SI], FLAG_SOBREVOADA
     jmp rver_prox
 
@@ -3677,6 +3831,8 @@ rver_colide:
     stc
     jmp rver_fim
 
+    ; A rocha inteira ja ficou para tras. Somente um slot anteriormente sobrevoado
+    ; pode render pontos pela passagem.
 rver_passou:
     test ROCHAS_TIPO[SI], FLAG_SOBREVOADA
     jz  rver_prox
@@ -3704,115 +3860,175 @@ rver_fim:
 VERIFICA_ROCHAS endp
 
 ; ---------------------------------------------------------------------
-; DEC_CORACAO: remove uma vida e atualiza o desenho.
-; Saida: CF = 0 removeu; CF = 1 era a ultima vida
+; COLISAO_BITMAP_ROCHA: compara os pixels do jipe e da rocha na area comum.
+; Entrada: DI = X da rocha, SI = slot. O chamador ja confirmou a sobreposicao
+;          horizontal. JIPE_X e JIPE_ALT definem a posicao do jipe.
+; Saida:   CF = 1 se dois pixels opacos coincidem. CF = 0 se a area esta livre.
 ; ---------------------------------------------------------------------
-DEC_CORACAO proc
-    cmp VIDAS, 1
-    ja  dec_remove
-    stc
-    ret
-
-dec_remove:
+COLISAO_BITMAP_ROCHA proc
     push AX
+    push BX
     push CX
     push DX
+    push DI
+    push SI
+    push BP
 
-    dec VIDAS
-    mov ASCII_X, X_CORACAO
-    mov ASCII_Y, Y_CORACAO
-    mov AL, COR_FUNDO
-    mov CX, CORACAO_LARG[4]  ; largura maxima (3 coracoes)
-    mov DX, ALTURA_CORACAO
-    call PREENCHER_LINHAS    ; apaga o desenho atual
-    call DESENHA_CORACOES
+    mov BP, ALTURA_JIPE
+    sub BP, JIPE_ALT                            ; linhas inferiores do jipe ao nivel da rocha
+    jle bitmap_livre
+    mov AL, ROCHAS_TIPO[SI]
+    and AL, MASCARA_TIPO
+    xor AH, AH
+    mov CX, TAM_ROCHA
+    mul CX
+    mov SI, offset ROCHAS_SPRITE
+    add SI, AX                                  ; primeira linha da variante
+    mov AX, JIPE_ALT
+    mov CX, LARGURA_JIPE
+    mul CX
+    mov BX, offset JIPE_SPRITE
+    add BX, AX                                  ; primeira linha do jipe na altura da rocha
 
+    mov AX, DI
+    sub AX, JIPE_X
+    mov DX, LARGURA_ROCHA
+    js  bitmap_esquerda
+    add BX, AX                                  ; rocha comeca dentro do jipe
+    mov CX, LARGURA_JIPE
+    sub CX, AX
+    cmp DX, CX
+    jbe bitmap_linha
+    mov DX, CX
+    jmp bitmap_linha
+bitmap_esquerda:
+    sub SI, AX                                  ; pula a parte da rocha a esquerda do jipe
+    add DX, AX
+bitmap_linha:
+    mov CX, DX
+    ; Se o pixel do jipe for transparente, avance ambos os ponteiros. Dois pixels
+    ; opacos no mesmo ponto encerram a busca.
+bitmap_pixel:
+    cmp byte ptr [BX], '0'
+    je  bitmap_segue
+    cmp byte ptr [SI], '0'
+    jne bitmap_colidiu
+bitmap_segue:
+    inc BX
+    inc SI
+    loop bitmap_pixel
+    ; Compense as colunas ja percorridas usando a largura de cada bitmap. Assim
+    ; ambos retomam a mesma coluna da area comum.
+    add BX, LARGURA_JIPE
+    add SI, LARGURA_ROCHA
+    sub BX, DX
+    sub SI, DX
+    dec BP
+    jnz bitmap_linha
+bitmap_livre:
+    clc
+    jmp bitmap_fim
+bitmap_colidiu:
+    stc
+bitmap_fim:
+    pop BP
+    pop SI
+    pop DI
     pop DX
     pop CX
+    pop BX
     pop AX
+    ret
+COLISAO_BITMAP_ROCHA endp
+
+; ---------------------------------------------------------------------
+; DEC_CORACAO: desconta a vida perdida na colisao.
+; Entrada: VIDAS = quantidade positiva antes do impacto.
+; Saida:   VIDAS decrementada. CF = 1 se chegou a zero, CF = 0 se ainda ha vidas.
+; ---------------------------------------------------------------------
+DEC_CORACAO proc
+    ; O resultado zero identifica a ultima vida. O chamador consulta CF para
+    ; escolher entre reaparecer e terminar.
+    dec VIDAS
+    jnz dec_ainda_vivo
+    stc                                         ; ultima vida consumida
+    ret
+dec_ainda_vivo:
     clc
     ret
 DEC_CORACAO endp
 
 ; ---------------------------------------------------------------------
-; CONTAGEM_TEMPO: decrementa o tempo a cada 18 ticks do BIOS.
-; Entrada: TEMPO_DECORRIDO = referencia de ticks; TEMPO_INICIAL = segundos
-; Saida:   AL = 1 se o segundo mudou (TEMPO_TEXTO atualizado); 0 caso
+; CONTAGEM_TEMPO: converte ticks da BIOS em segundos de partida.
+; Entrada: TEMPO_DECORRIDO = referencia anterior, TEMPO_FRACAO = saldo,
+;          TEMPO_INICIAL = segundos restantes.
+; Saida:   AL = 1 se descontou segundos e atualizou TEMPO_TEXTO, senao 0. Atualiza
+;          a referencia e preserva a fracao restante.
 ; ---------------------------------------------------------------------
 CONTAGEM_TEMPO proc
     push BX
     push DX
 
-    mov AL, 0                ; valor padrao: nao mudou
-
     mov AH, 00H
-    int 1AH                  ; DX = ticks desde meia-noite
-
+    int 1AH
     mov BX, DX
     sub BX, TEMPO_DECORRIDO
-
-    cmp BX, 18
-    jb contagem_fim          ; ainda nao passou 1 segundo
-
-    add TEMPO_DECORRIDO, 18  ; avanca referencia preservando excedente
+    mov TEMPO_DECORRIDO, DX
+    test AL, AL
+    jz  tempo_ticks
+    add BX, 00B0H                               ; BIOS volta a zero em 0018:00B0h ticks
+tempo_ticks:
+    xor AL, AL
+    ; Guarda a fracao entre quadros. 18 ticks sozinhos adiantariam o jogo.
+tempo_tick:
+    test BX, BX
+    jz  tempo_retorna
+    dec BX
+    add TEMPO_FRACAO, 1000
+    cmp TEMPO_FRACAO, FRACAO_SEGUNDO
+    jb  tempo_tick
+    sub TEMPO_FRACAO, FRACAO_SEGUNDO
     dec TEMPO_INICIAL
-
-    mov AX, TEMPO_INICIAL
-    xor DX, DX
-    mov BX, 10
-    div BX                   ; AL = dezenas, DL = unidades
-    add AL, '0'
-    mov TEMPO_TEXTO[0], AL
-    add DL, '0'
-    mov TEMPO_TEXTO[1], DL
-
-    mov AL, 1                ; sinaliza mudanca
-
-contagem_fim:
+    mov AL, 1
+    jnz tempo_tick
+    ; AL guarda se algum segundo foi consumido. Converta o mostrador uma unica vez,
+    ; mesmo que varios ticks tenham passado.
+tempo_retorna:
+    test AL, AL
+    jz  tempo_fim
+    call FORMATA_TEMPO
+    mov AL, 1
+tempo_fim:
     pop DX
     pop BX
     ret
 CONTAGEM_TEMPO endp
 
 ; ---------------------------------------------------------------------
-; ATUALIZA_TEMPO: apaga e redesenha o tempo na barra de status.
-; Entrada: TEMPO_TEXTO = dois digitos
+; FORMATA_TEMPO: converte o tempo restante para o mostrador decimal.
+; Entrada: TEMPO_INICIAL = segundos entre 0 e 99.
+; Saida:   TEMPO_TEXTO recebe os caracteres das dezenas e unidades.
 ; ---------------------------------------------------------------------
-ATUALIZA_TEMPO proc
-    push AX
-    push CX
-    push DX
-    push DI
-    push SI
+FORMATA_TEMPO proc
+    mov AX, TEMPO_INICIAL
+    xor DX, DX
+    ; Com DX zerado, DIV separa quociente e resto. Somar '0' transforma cada valor
+    ; em um caractere do mostrador.
+    mov BX, 10
+    div BX                                      ; AL = dezenas, DL = unidades
+    add AL, '0'
+    mov TEMPO_TEXTO[0], AL
+    add DL, '0'
+    mov TEMPO_TEXTO[1], DL
 
-    mov ASCII_X, 300
-    mov ASCII_Y, 6
-
-    mov AL, COR_FUNDO
-    mov CX, 2 * (LARGURA + 1)
-    mov DX, ALTURA
-    call PREENCHER_LINHAS
-
-    mov ASCII_X, 300
-    mov ASCII_Y, 6
-    mov SI, offset TEMPO_TEXTO
-    mov DI, offset COR_TEMPO
-    mov CX, 6
-    mov DX, 8
-    call ESCREVER_TEXTO
-
-    pop SI
-    pop DI
-    pop DX
-    pop CX
-    pop AX
     ret
-ATUALIZA_TEMPO endp
+FORMATA_TEMPO endp
 
 ; ---------------------------------------------------------------------
-; DISPARAR: dispara os dois canhoes (frontal e superior), cada um se
-; o tiro anterior ja tiver sumido.
-; Entrada: JIPE_X, JIPE_Y, JIPE_ALT; ES = 0A000H
+; DISPARAR: tenta acionar os dois canhoes de forma independente.
+; Entrada: JIPE_X, JIPE_ALT, registros dos dois tiros e ES = destino.
+; Saida:   Cada canhao livre inicia e desenha seu tiro. O frontal recebe tambem o X
+;          limite de alcance.
 ; ---------------------------------------------------------------------
 DISPARAR proc
     push AX
@@ -3830,12 +4046,14 @@ DISPARAR proc
     mov word ptr [BX + T_ATIVO], 1
     call DESENHA_TIRO
 
+    ; Teste o canhao frontal mesmo que o superior esteja ocupado. O alcance parte
+    ; do X efetivo de lancamento.
 disparar_frente:
     mov BX, offset TIRO_FRENTE
     cmp word ptr [BX + T_ATIVO], 0
     jne disparar_fim
     mov AX, JIPE_X
-    add AX, LARGURA_JIPE + 2         ; 2 px de folga (jipe anda ate 2 px/q)
+    add AX, LARGURA_JIPE                        ; primeira coluna depois do canhao
     mov [BX + T_X], AX
     add AX, ALCANCE_TIRO
     mov [BX + T_LIM], AX
@@ -3852,9 +4070,9 @@ disparar_fim:
 DISPARAR endp
 
 ; ---------------------------------------------------------------------
-; MOVER_JIPE: apaga, aplica deslocamento horizontal (limitado), avanca
-; o salto e redesenha.
-; Entrada: AX = deslocamento horizontal (com sinal); ES = 0A000H
+; MOVER_JIPE: limita o movimento horizontal, avanca o salto e desenha o jipe.
+; Entrada: AX = deslocamento horizontal com sinal, ES = segmento do quadro.
+; Saida:   JIPE_X e estado do salto atualizados. Jipe desenhado na nova posicao.
 ; ---------------------------------------------------------------------
 MOVER_JIPE proc
     push AX
@@ -3863,28 +4081,20 @@ MOVER_JIPE proc
     push DX
     push SI
 
-    push AX
-
-    mov AX, JIPE_X
-    mov ASCII_X, AX
-    mov AX, JIPE_Y
-    sub AX, JIPE_ALT
-    mov ASCII_Y, AX
-    mov AL, FUNDO_COR
-    mov CX, LARGURA_JIPE
-    mov DX, ALTURA_JIPE
-    call APAGAR_SPRITE
-
-    pop AX
     mov BX, JIPE_X
     add BX, AX
     cmp BX, 0
-    jl  jipe_bloqueado
+    jge jipe_limite_dir
+    xor BX, BX
+jipe_limite_dir:
     cmp BX, X_MAX_JIPE
-    jg  jipe_bloqueado
+    jle jipe_grava_x
+    mov BX, X_MAX_JIPE
+    ; Depois de limitar X a metade esquerda da tela, avance o salto. Subtrair a
+    ; altura de JIPE_Y desloca o desenho para cima.
+jipe_grava_x:
     mov JIPE_X, BX
 
-jipe_bloqueado:
     call ATUALIZA_SALTO
 
     mov AX, JIPE_X
@@ -3907,13 +4117,9 @@ jipe_bloqueado:
 MOVER_JIPE endp
 
 ; ---------------------------------------------------------------------
-; ATUALIZA_SALTO: avanca 1 quadro do salto trapezoidal.
-; Fases:
-;   0 = chao
-;   1 = subindo   (SALTO_VEL px por quadro ate SALTO_ALTURA)
-;   2 = topo      (jipe parado; espera a superficie rolar SALTO_TOPO_PX)
-;   3 = descendo  (SALTO_VEL px por quadro ate o chao)
-; Altera:  JIPE_ALT, SALTO_FASE, SALTO_PX
+; ATUALIZA_SALTO: avanca uma etapa do salto trapezoidal.
+; Entrada: SALTO_FASE, JIPE_ALT e distancia acumulada em SALTO_PX.
+; Saida:   Altura, fase e distancia de topo atualizadas para o quadro.
 ; ---------------------------------------------------------------------
 ATUALIZA_SALTO proc
     cmp SALTO_FASE, 0
@@ -3933,7 +4139,7 @@ ATUALIZA_SALTO proc
     jmp salto_grava
 
 salto_topo:
-    ; fase 2: jipe parado; acumula rolagem do cenario
+    ; Fase 2: mantenha a altura e conte os pixels percorridos pelo cenario.
     add SALTO_PX, VEL_CHAO
     cmp SALTO_PX, SALTO_TOPO_PX
     jb  salto_fim
@@ -3956,14 +4162,15 @@ salto_fim:
 ATUALIZA_SALTO endp
 
 ; ---------------------------------------------------------------------
-; GAME_OVER: tela de fim de jogo com score; aguarda uma tecla.
+; GAME_OVER: exibe a arte de fim de jogo, a instrucao e o score final.
+; Entrada: SCORE_INICIAL = pontuacao da partida.
+; Saida:   Tela final desenhada. Retorna ao chamador apos consumir uma tecla.
 ; ---------------------------------------------------------------------
 GAME_OVER proc
     call LIMPAR_TELA
 
     mov DI, offset COR_GAMEOVER
-    mov ASCII_X, X_INICIAL_TITULO
-    add ASCII_X, 70          ; desloca o titulo (mais largo)
+    mov ASCII_X, (LARG_TELA - 32 * LARGURA_GAMEOVER) / 2
     mov ASCII_Y, Y_INICIAL_TITULO
     mov CX, LARGURA_GAMEOVER
     mov DX, ALTURA_GAMEOVER
@@ -3977,6 +4184,8 @@ GAME_OVER proc
     mov SI, offset TXT_GAMEOVER
     call ESCREVER_TEXTO
 
+    ; Escreva o prefixo e os quatro digitos no mesmo cursor. A leitura bloqueante
+    ; da BIOS encerra esta tela.
     mov DI, offset COR_SCORE
     mov ASCII_X, 135
     mov ASCII_Y, 120
@@ -3988,14 +4197,15 @@ GAME_OVER proc
     call ESCREVER_TEXTO
 
     mov AH, 00H
-    int 16H                  ; espera tecla
+    int 16H                                     ; espera tecla
     ret
 GAME_OVER endp
 
-
 ; ---------------------------------------------------------------------
-; start: entrypoint. Configura segmentos, instala handler de teclado,
-; alterna entre menu e partidas ate o jogador escolher "Sair".
+; start: inicializa os segmentos, instala o teclado e coordena as telas.
+; Entrada: Ponto de entrada do executavel DOS.
+; Saida:   Ao escolher Sair, restaura o vetor salvo, ativa modo texto e devolve o
+;          controle ao DOS.
 ; ---------------------------------------------------------------------
 start:
     mov AX, @data
@@ -4005,26 +4215,30 @@ start:
     mov ES, AX
     cld
 
-    mov AX, 3509H            ; salva handler anterior da INT 09h
+    ; O servico 35h do DOS devolve o vetor em ES:BX. O servico 25h recebe o novo
+    ; tratador em DS:DX.
+    mov AX, 3509H                               ; salva handler anterior da INT 09h
     int 21H
-    mov OLD_INT09_OFF, BX
-    mov OLD_INT09_SEG, ES
+    mov CS:[OLD_INT09_OFF], BX
+    mov CS:[OLD_INT09_SEG], ES
 
     push DS
     mov DX, offset TRATA_TECLADO
     mov AX, SEG TRATA_TECLADO
     mov DS, AX
-    mov AX, 2509H            ; instala TRATA_TECLADO
+    mov AX, 2509H                               ; instala TRATA_TECLADO
     int 21H
     pop DS
 
     call MODO_VIDEO
 
+    ; Jogar prepara a semente, inicializa a partida e termina em GAME_OVER. Sair
+    ; segue para restaurar o vetor e o modo texto.
 menu:
     call LIMPAR_TELA
     call MENU_INICIAL
     cmp OPCAO_SEL, 0
-    jne fim_programa         ; 1 = Sair
+    jne fim_programa                            ; 1 = Sair
     call INICIA_ALEATORIO
     call NOVO_JOGO
     call INICIA_JOGO
@@ -4032,9 +4246,14 @@ menu:
     jmp menu
 
 fim_programa:
-    mov AX, 0003H            ; volta ao modo texto
+    ; Devolve o teclado ao DOS antes de liberar o codigo do jogo.
+    mov DX, CS:[OLD_INT09_OFF]
+    mov DS, CS:[OLD_INT09_SEG]
+    mov AX, 2509H
+    int 21H
+    mov AX, 0003H                               ; volta ao modo texto
     int 10H
     mov AX, 4C00H
-    int 21H                  ; encerra
+    int 21H                                     ; encerra
 
 end start
