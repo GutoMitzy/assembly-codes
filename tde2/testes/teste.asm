@@ -959,7 +959,7 @@ ASCII_Y          dw 0                 ; Y corrente de desenho de texto
 LARGURA_TITULO   equ 5                ; avanco X entre celulas do titulo
 ALTURA_TITULO    equ 8                ; avanco Y entre celulas do titulo
 
-TXT_GAMEOVER     db 'Pressione qualquer tecla para continuar...', 0
+TXT_GAMEOVER     db 'PRESSIONE QUALQUER TECLA PARA CONTINUAR...', 0
 LARGURA_GAMEOVER equ 4                ; avanco X da mensagem de game over
 ALTURA_GAMEOVER  equ 7                ; avanco Y da mensagem de game over
 
@@ -981,8 +981,8 @@ NUM_GLYPHS       equ 42               ; total de glifos na fonte
 ; ============================================================
 ; MENU INICIAL
 ; ============================================================
-TXT_JOGAR        db "Jogar", 0        ; rotulo do botao Jogar
-TXT_SAIR         db "Sair", 0         ; rotulo do botao Sair
+TXT_JOGAR        db "JOGAR", 0        ; rotulo do botao Jogar
+TXT_SAIR         db "SAIR", 0         ; rotulo do botao Sair
 NUM_OPCOES       equ 2                ; total de opcoes do menu
 
 BTN_X            dw 0                 ; X corrente do botao em construcao
@@ -1039,6 +1039,7 @@ SALTO_TOPO_PX    equ 5                ; deslocamento X acumulado no topo do salt
 JIPE_ALT         dw 0                 ; altura atual do jipe acima do chao
 SALTO_FASE       db 0                 ; fase do salto (0 chao, 1 sobe, 2 topo, 3 desce)
 SALTO_PX         db 0                 ; deslocamento X acumulado no topo
+SALTO_VX         dw 0                 ; ultimo passo lateral, usado durante o salto
 
 RODA_FIM_JIPE    equ 17               ; ultima coluna do sprite com roda
 
@@ -1182,8 +1183,6 @@ MODO_SOME         equ 1               ; sprite sai e nao volta
 JIPE_X            dw 10               ; X atual do jipe
 JIPE_Y            equ Y_SUPERFICIE - ALTURA_JIPE  ; Y do jipe no chao
 JIPE_VEL          dw 1                ; deslocamento X por quadro
-TECLA_ESQ         db 0                ; estado da seta esquerda (0/1)
-TECLA_DIR         db 0                ; estado da seta direita (0/1)
 
 ; ============================================================
 ; SCORE E TEMPO
@@ -1272,79 +1271,7 @@ PANORAMA_RAM segment para private 'FAR_DATA'
 PIXELS_LUA db LARG_TELA * (ALT_TELA - Y_REGIAO) dup (?)
 PANORAMA_RAM ends
 
-OLD_INT09_OFF     dw 0
-OLD_INT09_SEG     dw 0
-
 .code
-; Fluxo principal: start -> menu -> NOVO_JOGO -> INICIA_JOGO -> GAME_OVER.
-; Na partida, ES aponta para o quadro em RAM. APRESENTA_QUADRO copia a imagem
-; para a VGA. No menu e no fim de jogo, o desenho vai diretamente para A000h.
-; DS normalmente aponta para .data. CLD em start faz as instrucoes de string
-; avancarem na memoria. Slot e uma entrada reutilizavel em uma tabela.
-; Quando uma rotina devolve CF, JC segue com CF = 1 e JNC com CF = 0.
-
-; ---------------------------------------------------------------------
-; TRATA_TECLADO: registra as setas laterais e encadeia a interrupcao.
-; Entrada: IRQ 1 (INT 09h), codigo da tecla na porta 60h.
-; Saida:   TECLA_ESQ ou TECLA_DIR atualizado para as setas reconhecidas. O controle
-;          segue para o endereco salvo do tratador anterior.
-; ---------------------------------------------------------------------
-TRATA_TECLADO proc far
-    push AX
-    push DS
-
-    ; A interrupcao pode chegar com outro DS. Guarde o segmento interrompido antes
-    ; de acessar as flags do jogo.
-    mov AX, @data
-    mov DS, AX
-
-    in AL, 60H                                  ; le scan code
-
-    cmp AL, 4BH                                 ; seta esquerda pressionada
-    je tecla_esq_press
-    cmp AL, 0CBH                                ; seta esquerda solta
-    je tecla_esq_solto
-    cmp AL, 4DH                                 ; seta direita pressionada
-    je tecla_dir_press
-    cmp AL, 0CDH                                ; seta direita solta
-    je tecla_dir_solto
-    jmp teclado_fim
-
-tecla_esq_press:
-    mov TECLA_ESQ, 1
-    jmp teclado_fim
-
-tecla_esq_solto:
-    mov TECLA_ESQ, 0
-    jmp teclado_fim
-
-tecla_dir_press:
-    mov TECLA_DIR, 1
-    jmp teclado_fim
-
-tecla_dir_solto:
-    mov TECLA_DIR, 0
-
-    ; A leitura por CS usa duas words como ponteiro distante (offset e segmento). O
-    ; tratador encadeado conclui a interrupcao.
-teclado_fim:
-    pop DS
-    pop AX
-
-    jmp dword ptr CS:[OLD_INT09_OFF]            ; encadeia com o handler anterior
-TRATA_TECLADO endp
-
-; ---------------------------------------------------------------------
-; MODO_VIDEO: seleciona o modo grafico VGA de 320 x 200 e 256 cores.
-; Entrada: Nenhum parametro.
-; Saida:   Modo 13h ativo.
-; ---------------------------------------------------------------------
-MODO_VIDEO proc
-    ; AH seleciona o servico de troca de modo da BIOS e AL identifica o modo 13h.
-    mov AX, 0013H
-    int 10H
-    ret
-MODO_VIDEO endp
 
 ; ---------------------------------------------------------------------
 ; LIMPAR_TELA: preenche a tela inteira com a cor zero.
@@ -1371,9 +1298,12 @@ LIMPAR_TELA endp
 ; ---------------------------------------------------------------------
 MENU_INICIAL proc
     push AX
+    push BX
     push CX
     push DX
     push SI
+    push DI
+    push BP
 
     mov DI, offset COR_TITULO
     mov ASCII_X, X_INICIAL_TITULO
@@ -1383,18 +1313,150 @@ MENU_INICIAL proc
     mov SI, offset TITULO_JOGO
     call ESCREVER_TEXTO
 
-    ; Um passo zero posiciona os sprites antes que o laco de selecao comece a
-    ; anima-los.
-    xor AX, AX                                  ; so desenha (nao move)
-    call MOVER_SPRITES_MENU
+botoes_redesenha:
+    xor BP, BP                                  ; BP = indice da opcao
 
-    call DESENHAR_BOTOES
+botoes_proximo:
+    mov DI, offset COR_BOTAO
+    mov AX, BP
+    cmp AL, OPCAO_SEL
+    jne botoes_cor
+    mov DI, offset COR_SELEC
 
+    ; As tabelas guardam ponteiros e coordenadas em words. O indice da opcao vezes
+    ; dois seleciona o par correto.
+botoes_cor:
+    mov BX, BP
+    shl BX, 1
+    mov SI, BOTOES_TXT[BX]
+    mov DX, BOTOES_Y[BX]
+    mov BTN_TXT, SI
+    mov BTN_Y, DX
+
+    xor CX, CX                                  ; conta caracteres
+    mov BX, SI
+botoes_conta:
+    cmp byte ptr [BX], 0
+    je  botoes_fim_conta
+    inc BX
+    inc CX
+    jmp botoes_conta
+
+    ; Some as duas bordas e duas celulas de margem ao texto. Metade da largura que
+    ; sobra na tela define X.
+botoes_fim_conta:
+    mov AX, CX
+    add AX, 4
+    mov BX, LARGURA
+    mul BX                                      ; AX = largura total em px
+    mov BX, AX
+    mov AX, LARG_TELA
+    sub AX, BX
+    shr AX, 1                                   ; AX = X centralizado
+    mov BTN_X, AX
+
+    add CX, 2
+    mov AX, BTN_X
+    mov ASCII_X, AX
+    mov AX, BTN_Y
+    mov ASCII_Y, AX
+    call DESENHAR_CAIXA
+
+    mov AX, BTN_X
+    add AX, 2 * LARGURA
+    mov ASCII_X, AX
+    mov AX, BTN_Y
+    add AX, ALTURA
+    mov ASCII_Y, AX
+    mov CX, LARGURA
+    mov DX, ALTURA
+    mov SI, BTN_TXT
+    call ESCREVER_TEXTO
+
+    inc BP
+    cmp BP, NUM_OPCOES
+    jb  botoes_proximo                      ; falta desenhar outra opcao
+
+    xor AX, AX                              ; botoes prontos: exibe os sprites nas posicoes atuais, sem deslocar
+menu_desenha_sprites:
+    mov FUNDO_COR, COR_FUNDO
+    mov ASCII_Y, 100
+
+    xor BP, BP
+    mov SI, offset NAVES_SPRITE
+    mov BX, offset NAVE_PALETA
+    mov CX, LARGURA_NAVE
+
+    ; BP percorre as posicoes de duas em duas (words). SI avanca um bitmap inteiro
+    ; para trocar o tipo da nave.
+menu_move_nave:
+    mov DI, BP
+    mov DX, SPRITES_MENU_X[DI]
+    mov ASCII_X, DX
+    mov DX, ALTURA_NAVE
+    mov DI, MODO_REAPARECE
+    call MOVER_SPRITE
+    mov DI, BP
+    mov DX, ASCII_X
+    mov SPRITES_MENU_X[DI], DX
+    add SI, TAM_NAVE
+    add BP, 2
+    cmp BP, 6
+    jb  menu_move_nave
+
+    mov DI, MODO_REAPARECE
+    ; O quarto X pertence ao jipe. Reutilize o movimento com as dimensoes e a
+    ; paleta dele.
+    mov DX, SPRITES_MENU_X[6]
+    mov ASCII_X, DX
+    mov SI, offset JIPE_SPRITE
+    mov BX, offset JIPE_PALETA
+    mov CX, LARGURA_JIPE
+    mov DX, ALTURA_JIPE
+    call MOVER_SPRITE
+    mov DX, ASCII_X
+    mov SPRITES_MENU_X[6], DX
+    
+menu_le_tecla:
+    mov AH, 01H                             ; consulta sem bloquear
+    int 16H
+    jz  menu_proximo_quadro                 ; sem tecla: continua a animacao
+
+    mov AH, 00H                             ; consome a tecla disponivel
+    int 16H
+    cmp AL, 13                              ; Enter: confirma a selecao
+    je  botoes_enter
+    cmp AH, 48H                             ; seta para cima
+    je  botoes_cima
+    cmp AH, 50H                             ; seta para baixo
+    je  botoes_baixo
+
+menu_proximo_quadro:
+    call ESPERA_RETRACO
+    mov AX, VEL_MENU                        ; passo horizontal deste quadro
+    jmp menu_desenha_sprites                ; reutiliza o bloco das naves e do jipe
+
+botoes_cima:
+    cmp OPCAO_SEL, 0
+    je  menu_proximo_quadro                 ; ja esta na primeira opcao
+    dec OPCAO_SEL
+    jmp botoes_redesenha
+
+botoes_baixo:
+    cmp OPCAO_SEL, NUM_OPCOES - 1
+    jae menu_proximo_quadro                 ; ja esta na ultima opcao
+    inc OPCAO_SEL
+    jmp botoes_redesenha
+
+botoes_enter:
+    pop BP
+    pop DI
     pop SI
     pop DX
     pop CX
+    pop BX
     pop AX
-    ret
+    ret                                     ; volta para start com OPCAO_SEL
 MENU_INICIAL endp
 
 ; ---------------------------------------------------------------------
@@ -1407,8 +1469,9 @@ ESCREVER_TEXTO proc
     push AX
     push BX
     push SI
+    push BP
 
-    mov BX, ASCII_X                             ; BX = X inicial (restaurado em LF)
+    mov BP, ASCII_X                             ; BP = X inicial (restaurado em LF)
 
     ; LODSB consome um byte de DS:SI. Zero termina; CR e LF permitem usar as
     ; quebras de linha do DOS.
@@ -1421,62 +1484,36 @@ texto_exibe:
     cmp AL, 10                                  ; LF: proxima linha
     je  texto_nova_linha
 
-    call ASCII_PARA_INDICE
+    ; BX percorre os codigos; a distancia ate a base e o indice do glifo.
+    mov BX, offset FONTE_CHARS
+texto_busca:
+    cmp AL, [BX]
+    je  texto_achou
+    inc BX
+    cmp BX, offset FONTE_CHARS + NUM_GLYPHS
+    jb  texto_busca
+    mov AL, G_ESPACO
+    jmp texto_glifo
+texto_achou:
+    sub BX, offset FONTE_CHARS
+    mov AL, BL
+texto_glifo:
     call DESENHA_CARACTERE
     add ASCII_X, CX
     jmp texto_exibe
 
 texto_nova_linha:
-    mov ASCII_X, BX
+    mov ASCII_X, BP
     add ASCII_Y, DX
     jmp texto_exibe
 
 texto_fim:
+    pop BP
     pop SI
     pop BX
     pop AX
     ret
 ESCREVER_TEXTO endp
-
-; ---------------------------------------------------------------------
-; ASCII_PARA_INDICE: localiza um caractere na tabela da fonte.
-; Entrada: AL = codigo do caractere.
-; Saida:   AL = indice do glifo ou G_ESPACO se nao houver correspondencia.
-; ---------------------------------------------------------------------
-ASCII_PARA_INDICE proc
-    push BX
-    push CX
-
-    cmp AL, 'a'                                 ; minuscula -> maiuscula
-    jb  procura
-    cmp AL, 'z'
-    ja  procura
-    sub AL, 20H
-
-    ; Cada entrada representa um glifo. A distancia ate a base da tabela fornece o
-    ; indice usado no desenho.
-procura:
-    mov BX, offset FONTE_CHARS
-    mov CX, NUM_GLYPHS
-
-procura_loop:
-    cmp AL, [BX]
-    je  achou
-    inc BX
-    loop procura_loop
-
-    mov AL, G_ESPACO                            ; nao existe: usa espaco
-    jmp fim_conversao
-
-achou:
-    sub BX, offset FONTE_CHARS
-    mov AL, BL                                  ; AL = indice do glifo
-
-fim_conversao:
-    pop CX
-    pop BX
-    ret
-ASCII_PARA_INDICE endp
 
 ; ---------------------------------------------------------------------
 ; DESENHA_CARACTERE: desenha os bits ativos de um glifo de 5 x 8 pixels.
@@ -1542,68 +1579,6 @@ proximo_bit:
 DESENHA_CARACTERE endp
 
 ; ---------------------------------------------------------------------
-; MOVER_SPRITES_MENU: anima as tres naves e o jipe em um percurso ciclico.
-; Entrada: AX = deslocamento horizontal, ES = segmento de video.
-; Saida:   SPRITES_MENU_X atualizado e sprites desenhados.
-; ---------------------------------------------------------------------
-MOVER_SPRITES_MENU proc
-    push AX
-    push BX
-    push CX
-    push DX
-    push SI
-    push DI
-
-    mov FUNDO_COR, COR_FUNDO
-    mov ASCII_Y, 100
-
-    push BP
-    xor BP, BP
-    mov SI, offset NAVES_SPRITE
-    mov BX, offset NAVE_PALETA
-    mov CX, LARGURA_NAVE
-
-    ; BP percorre as posicoes de duas em duas (words). SI avanca um bitmap inteiro
-    ; para trocar o tipo da nave.
-menu_move_nave:
-    mov DI, BP
-    mov DX, SPRITES_MENU_X[DI]
-    mov ASCII_X, DX
-    mov DX, ALTURA_NAVE
-    mov DI, MODO_REAPARECE
-    call MOVER_SPRITE
-    mov DI, BP
-    mov DX, ASCII_X
-    mov SPRITES_MENU_X[DI], DX
-    add SI, TAM_NAVE
-    add BP, 2
-    cmp BP, 6
-    jb  menu_move_nave
-
-    pop BP
-    mov DI, MODO_REAPARECE
-    ; O quarto X pertence ao jipe. Reutilize o movimento com as dimensoes e a
-    ; paleta dele.
-    mov DX, SPRITES_MENU_X[6]
-    mov ASCII_X, DX
-    mov SI, offset JIPE_SPRITE
-    mov BX, offset JIPE_PALETA
-    mov CX, LARGURA_JIPE
-    mov DX, ALTURA_JIPE
-    call MOVER_SPRITE
-    mov DX, ASCII_X
-    mov SPRITES_MENU_X[6], DX
-
-    pop DI
-    pop SI
-    pop DX
-    pop CX
-    pop BX
-    pop AX
-    ret
-MOVER_SPRITES_MENU endp
-
-; ---------------------------------------------------------------------
 ; MOVER_SPRITE: desloca o sprite e aplica a regra da borda da tela.
 ; Entrada: AX = passo com sinal, DI = modo, SI = bitmap, BX = paleta. CX/DX =
 ;          largura/altura, ASCII_X/Y = origem, ES = destino. FUNDO_COR = cor para
@@ -1621,8 +1596,19 @@ MOVER_SPRITE proc
     mov BP, AX
     cmp DI, MODO_SOME                           ; a partida ja recompos o fundo do quadro
     je  mover_avanca
+    ; Apaga so a parte visivel da posicao antiga no menu. Recupere a
+    ; origem e a largura inteira antes de calcular o novo X.
+    push ASCII_X
+    push CX
+    mov AX, ASCII_X
+    call RECORTA_X
+    jcxz mover_apagou
+    mov ASCII_X, AX
     mov AL, FUNDO_COR
-    call APAGAR_SPRITE
+    call PREENCHER_LINHAS
+mover_apagou:
+    pop CX
+    pop ASCII_X
 
 mover_avanca:
     mov AX, ASCII_X
@@ -1679,37 +1665,6 @@ mover_fim:
     pop AX
     ret
 MOVER_SPRITE endp
-
-; ---------------------------------------------------------------------
-; APAGAR_SPRITE: cobre a parte visivel do sprite com uma cor.
-; Entrada: AL = cor, CX/DX = largura/altura, ASCII_X/Y = origem, ES = destino.
-; Saida:   Retangulo visivel preenchido. ASCII_X original restaurado.
-; ---------------------------------------------------------------------
-APAGAR_SPRITE proc
-    push AX
-    push BX
-    push CX
-    push DX
-    push ASCII_X
-
-    ; Guarde a cor antes de usar AX para o recorte. Se a largura visivel for zero,
-    ; nao ha pixels para preencher.
-    mov BL, AL                                  ; BL = cor
-    mov AX, ASCII_X
-    call RECORTA_X                              ; AX = X visivel, CX = largura visivel
-    jcxz apagar_fim
-    mov ASCII_X, AX
-    mov AL, BL
-    call PREENCHER_LINHAS
-
-apagar_fim:
-    pop ASCII_X
-    pop DX
-    pop CX
-    pop BX
-    pop AX
-    ret
-APAGAR_SPRITE endp
 
 ; ---------------------------------------------------------------------
 ; RECORTA_X: calcula a intersecao horizontal entre sprite e tela.
@@ -1915,128 +1870,6 @@ paleta_proximo:
 DESENHA_ASCII_PALETA endp
 
 ; ---------------------------------------------------------------------
-; DESENHAR_BOTOES: desenha as opcoes e anima o menu ate a confirmacao.
-; Entrada: OPCAO_SEL = selecao atual, ES = segmento de video.
-; Saida:   OPCAO_SEL = indice confirmado com Enter.
-; ---------------------------------------------------------------------
-DESENHAR_BOTOES proc
-    push AX
-    push BX
-    push CX
-    push DX
-    push SI
-    push DI
-    push BP
-
-botoes_redesenha:
-    xor BP, BP                                  ; BP = indice da opcao
-
-botoes_proximo:
-    mov DI, offset COR_BOTAO
-    mov AX, BP
-    cmp AL, OPCAO_SEL
-    jne botoes_cor
-    mov DI, offset COR_SELEC
-
-    ; As tabelas guardam ponteiros e coordenadas em words. O indice da opcao vezes
-    ; dois seleciona o par correto.
-botoes_cor:
-    mov BX, BP
-    shl BX, 1
-    mov SI, BOTOES_TXT[BX]
-    mov DX, BOTOES_Y[BX]
-    mov BTN_TXT, SI
-    mov BTN_Y, DX
-
-    xor CX, CX                                  ; conta caracteres
-    mov BX, SI
-botoes_conta:
-    cmp byte ptr [BX], 0
-    je  botoes_fim_conta
-    inc BX
-    inc CX
-    jmp botoes_conta
-
-    ; Some as duas bordas e duas celulas de margem ao texto. Metade da largura que
-    ; sobra na tela define X.
-botoes_fim_conta:
-    mov AX, CX
-    add AX, 4
-    mov BX, LARGURA
-    mul BX                                      ; AX = largura total em px
-    mov BX, AX
-    mov AX, LARG_TELA
-    sub AX, BX
-    shr AX, 1                                   ; AX = X centralizado
-    mov BTN_X, AX
-
-    add CX, 2
-    mov AX, BTN_X
-    mov ASCII_X, AX
-    mov AX, BTN_Y
-    mov ASCII_Y, AX
-    call DESENHAR_CAIXA
-
-    mov AX, BTN_X
-    add AX, 2 * LARGURA
-    mov ASCII_X, AX
-    mov AX, BTN_Y
-    add AX, ALTURA
-    mov ASCII_Y, AX
-    mov CX, LARGURA
-    mov DX, ALTURA
-    mov SI, BTN_TXT
-    call ESCREVER_TEXTO
-
-    inc BP
-    cmp BP, NUM_OPCOES
-    jae botoes_tecla
-    jmp botoes_proximo
-
-    ; Enquanto a BIOS nao indicar tecla, anime os sprites. Uma seta valida
-    ; redesenha as opcoes; Enter confirma.
-botoes_tecla:
-    call ESPERA_RETRACO
-    mov AX, VEL_MENU
-    call MOVER_SPRITES_MENU
-
-    mov AH, 01H
-    int 16H                                     ; tecla disponivel?
-    jz  botoes_tecla
-    mov AH, 00H
-    int 16H
-    cmp AH, 48H                                 ; seta para cima
-    je  botoes_cima
-    cmp AH, 50H                                 ; seta para baixo
-    je  botoes_baixo
-    cmp AL, 13                                  ; Enter
-    je  botoes_enter
-    jmp botoes_tecla
-
-botoes_cima:
-    cmp OPCAO_SEL, 0
-    je  botoes_tecla
-    dec OPCAO_SEL
-    jmp botoes_redesenha
-
-botoes_baixo:
-    cmp OPCAO_SEL, NUM_OPCOES - 1
-    jae botoes_tecla
-    inc OPCAO_SEL
-    jmp botoes_redesenha
-
-botoes_enter:
-    pop BP
-    pop DI
-    pop SI
-    pop DX
-    pop CX
-    pop BX
-    pop AX
-    ret
-DESENHAR_BOTOES endp
-
-; ---------------------------------------------------------------------
 ; DESENHAR_CAIXA: monta uma moldura com tres linhas de glifos.
 ; Entrada: CX = numero positivo de celulas internas, DI = paleta. ASCII_X/Y = canto
 ;          superior esquerdo, ES = destino.
@@ -2117,64 +1950,32 @@ retraco_entra:
 ESPERA_RETRACO endp
 
 ; ---------------------------------------------------------------------
-; INICIA_ALEATORIO: combina os ticks da BIOS com o contador do temporizador.
-; Entrada: Relogio da BIOS e canal 0 do temporizador.
-; Saida:   SEMENTE inicializada com um valor diferente de zero.
-; ---------------------------------------------------------------------
-INICIA_ALEATORIO proc
-    push AX
-    push CX
-    push DX
-
-    mov AH, 00H
-    int 1AH                                     ; CX:DX = ticks
-    xor DX, CX
-    ; O comando na porta 43h trava a amostra do canal 0. As duas leituras da porta
-    ; 40h entram na mistura com os ticks.
-    xor AL, AL
-    out 43H, AL
-    in  AL, 40H
-    mov AH, AL
-    in  AL, 40H                                 ; AX combina os dois bytes amostrados
-    xor AX, DX
-    jnz semente_ok
-    mov AX, 0ACE1H                              ; semente nao pode ser 0
-semente_ok:
-    mov SEMENTE, AX
-
-    pop DX
-    pop CX
-    pop AX
-    ret
-INICIA_ALEATORIO endp
-
-; ---------------------------------------------------------------------
-; NOVO_JOGO: inicializa os dados de uma nova partida.
-; Entrada: DURACAO_JOGO = tempo inicial em segundos.
-; Saida:   Tres vidas, score zerado, tempo inicial formatado e fracao zerada.
-; ---------------------------------------------------------------------
-NOVO_JOGO proc
-    mov VIDAS, 3
-    mov TEMPO_DECORRIDO, 0
-    mov SCORE_INICIAL[0], '0'
-    mov SCORE_INICIAL[1], '0'
-    mov SCORE_INICIAL[2], '0'
-    mov SCORE_INICIAL[3], '0'
-    ; Parta do valor configurado e gere o texto a partir dele, para que contador e
-    ; mostrador comecem iguais.
-    mov TEMPO_INICIAL, DURACAO_JOGO
-    mov TEMPO_FRACAO, 0
-    call FORMATA_TEMPO
-    ret
-NOVO_JOGO endp
-
-; ---------------------------------------------------------------------
-; INICIA_JOGO: prepara o cenario e executa o laco da partida.
-; Entrada: Dados de NOVO_JOGO e semente inicializada.
-; Saida:   Retorna por Esc, tempo esgotado ou fim das vidas. ES = A000h e
-;          SCORE_INICIAL guarda a pontuacao final.
+; INICIA_JOGO: inicializa uma nova partida, prepara o cenario e
+; executa o laco do jogo.
+; Entrada: DS = segmento de dados.
+; Saida:   Retorna por Esc, tempo esgotado ou fim das vidas.
+;          ES = A000h e SCORE_INICIAL guarda a pontuacao final.
 ; ---------------------------------------------------------------------
 INICIA_JOGO proc
+    ; Gera a semente antes do primeiro sorteio de obstaculos.
+    mov AH, 00H
+    int 1AH                                 ; CX:DX = ticks desde a meia-noite
+    xor DX, CX                              ; combina as duas metades
+    jnz semente_ok
+    mov DX, 0ACE1H                          ; evita semente zero no xorshift
+
+semente_ok:
+    mov SEMENTE, DX
+
+    ; Inicia a partida com tres vidas e quatro digitos de score zerados.
+    mov VIDAS, 3
+    mov word ptr SCORE_INICIAL[0], 3030H        ; dois caracteres '0' por word
+    mov word ptr SCORE_INICIAL[2], 3030H
+
+    ; Prepara o contador e o texto do tempo antes do primeiro quadro.
+    mov TEMPO_INICIAL, DURACAO_JOGO
+    mov TEMPO_FRACAO, 0
+
     ; A partida monta a imagem em RAM. Limpe os 64000 bytes antes de compor a
     ; primeira paisagem.
     mov AX, SEG PIXELS_QUADRO
@@ -2190,9 +1991,7 @@ INICIA_JOGO proc
     mov JIPE_ALT, 0
     mov SALTO_FASE, 0
 
-    call INICIA_CRATERAS
-    call INICIA_ROCHAS
-    call INICIA_ALIENS          
+    call INICIA_OBJETOS
 
     ; Desenha o cenario
     mov ASCII_X, 0
@@ -2279,42 +2078,54 @@ jogo_loop:
     jne verifica_teclado
     jmp jogo_fim
 
-    ; A BIOS fornece eventos de Esc, espaco e salto. As setas laterais usam o
-    ; estado pressionado/solto gravado pela interrupcao.
 verifica_teclado:
-    mov AH, 01H
-    int 16H                                     ; tecla disponivel?
-    jz  atualiza_jipe
-    mov AH, 00H
+    mov JIPE_VEL, 0                          ; no chao, so anda se chegar uma seta
+
+le_tecla_jogo:
+    mov AH, 01H                              ; verifica se ha tecla no buffer
     int 16H
-    cmp AL, 1BH                                 ; Esc
-    jne verifica_espaco
+    jz  aplica_movimento                     ; buffer vazio: executa o quadro
+
+    mov AH, 00H                              ; consome a tecla encontrada
+    int 16H                                  ; AL = ASCII, AH = scan code
+
+    cmp AL, 1BH                              ; Esc: encerra a partida
+    jne tecla_jogo_espaco
     jmp jogo_fim
 
-verifica_espaco:
-    cmp AL, 20H                                 ; espaco: atira
-    jne verifica_salto
+tecla_jogo_espaco:
+    cmp AL, 20H                              ; espaco: aciona os canhoes
+    jne tecla_jogo_esq
     call DISPARAR
+    jmp le_tecla_jogo
 
-verifica_salto:
-    cmp AH, 48H                                 ; seta para cima: salta
-    jne atualiza_jipe
-    cmp SALTO_FASE, 0
-    jne atualiza_jipe
-    mov SALTO_FASE, 1
-
-    ; Reconstrua a velocidade a cada quadro. Se as duas setas estiverem
-    ; pressionadas, a direita tem prioridade.
-atualiza_jipe:
-    mov JIPE_VEL, 0
-    cmp TECLA_ESQ, 1
-    jne verifica_direita
+tecla_jogo_esq:
+    cmp AH, 4BH                              ; seta para a esquerda
+    jne tecla_jogo_dir
     mov JIPE_VEL, -VEL_JIPE
+    mov SALTO_VX, -VEL_JIPE                  ; memoriza a direcao para o salto
+    jmp le_tecla_jogo
 
-verifica_direita:
-    cmp TECLA_DIR, 1
-    jne move_jipe
+tecla_jogo_dir:
+    cmp AH, 4DH                              ; seta para a direita
+    jne tecla_jogo_cima
     mov JIPE_VEL, VEL_JIPE
+    mov SALTO_VX, VEL_JIPE
+    jmp le_tecla_jogo
+
+tecla_jogo_cima:
+    cmp AH, 48H                              ; seta para cima
+    jne le_tecla_jogo
+    cmp SALTO_FASE, 0                        ; so inicia se estiver no chao
+    jne le_tecla_jogo
+    mov SALTO_FASE, 1
+    jmp le_tecla_jogo
+
+aplica_movimento:
+    cmp SALTO_FASE, 0
+    je  move_jipe                            ; no chao, usa o passo deste quadro
+    mov AX, SALTO_VX
+    mov JIPE_VEL, AX                         ; no ar, usa a direcao memorizada
 
 move_jipe:
     mov AX, JIPE_VEL
@@ -2332,8 +2143,8 @@ move_jipe:
     je  apresenta_jogo
 
 colidiu:
-    call DEC_CORACAO
-    jnc reinicia_jipe
+    dec VIDAS                                   ; zero encerra a partida
+    jnz reinicia_jipe
     jmp jogo_fim
 
 reinicia_jipe:
@@ -2342,6 +2153,7 @@ reinicia_jipe:
     mov JIPE_X, 0
     mov JIPE_ALT, 0
     mov SALTO_FASE, 0
+    mov SALTO_VX, 0
     mov CX, PAUSA_COLISAO_Q
     jcxz fim_pausa_jipe
 pausa_colisao:
@@ -2449,40 +2261,6 @@ APRESENTA_QUADRO endp
 ; Saida:   Barra de status desenhada no quadro atual.
 ; ---------------------------------------------------------------------
 EXIBE_STATUS proc
-    call DESENHA_CORACOES
-    call DESENHA_SCORE
-
-    mov ASCII_X, 290
-    mov ASCII_Y, 5
-    mov SI, offset RELOGIO_SPRITE
-    mov BX, offset COR_RELOGIO
-    mov CX, LARGURA_RELOGIO
-    mov DX, ALTURA_RELOGIO
-    call DESENHA_ASCII_PALETA
-
-    ; A posicao do texto parte da origem do relogio, com espaco para o icone a
-    ; esquerda.
-    add ASCII_X, 10
-    add ASCII_Y, 1
-    mov SI, offset TEMPO_TEXTO
-    mov DI, offset COR_TEMPO
-    mov CX, 6
-    mov DX, 8
-    call ESCREVER_TEXTO
-    ret
-EXIBE_STATUS endp
-
-; ---------------------------------------------------------------------
-; DESENHA_CORACOES: seleciona o bitmap correspondente ao numero de vidas.
-; Entrada: VIDAS = 1 a 3, ES = segmento do quadro.
-; Saida:   Bitmap de vidas desenhado em X_CORACAO, Y_CORACAO.
-; ---------------------------------------------------------------------
-DESENHA_CORACOES proc
-    push BX
-    push CX
-    push DX
-    push SI
-
     ; Transforme 1..3 vidas em indices 0..2. Cada entrada da tabela ocupa dois
     ; bytes e aponta para um bitmap.
     mov BL, VIDAS
@@ -2497,25 +2275,7 @@ DESENHA_CORACOES proc
     mov DX, ALTURA_CORACAO
     call DESENHA_ASCII_PALETA
 
-    pop SI
-    pop DX
-    pop CX
-    pop BX
-    ret
-DESENHA_CORACOES endp
-
-; ---------------------------------------------------------------------
-; DESENHA_SCORE: limpa o campo de pontos e escreve o score atual.
-; Entrada: SCORE_INICIAL = quatro digitos ASCII, ES = destino.
-; Saida:   Prefixo e pontuacao desenhados em X_SCORE, Y_SCORE.
-; ---------------------------------------------------------------------
-DESENHA_SCORE proc
-    push AX
-    push CX
-    push DX
-    push SI
-    push DI
-
+    ; Limpa o campo e escreve o prefixo seguido dos quatro digitos.
     mov ASCII_X, X_SCORE
     mov ASCII_Y, Y_SCORE
     mov AL, COR_FUNDO
@@ -2533,25 +2293,49 @@ DESENHA_SCORE proc
     mov SI, offset SCORE_INICIAL
     call ESCREVER_TEXTO
 
-    pop DI
-    pop SI
-    pop DX
-    pop CX
-    pop AX
+    mov ASCII_X, 290
+    mov ASCII_Y, 5
+    mov SI, offset RELOGIO_SPRITE
+    mov BX, offset COR_RELOGIO
+    mov CX, LARGURA_RELOGIO
+    mov DX, ALTURA_RELOGIO
+    call DESENHA_ASCII_PALETA
+
+    ; A posicao do texto parte da origem do relogio, com espaco para o icone a
+    ; esquerda.
+    add ASCII_X, 10
+    add ASCII_Y, 1
+    
+    ; Converte os segundos em dois caracteres antes de desenhar o tempo.
+    mov AX, TEMPO_INICIAL                   ; AX = segundos restantes (0..99)
+    xor DX, DX                              ; DX:AX = valor a dividir
+    mov BX, 10
+    div BX                                  ; AX = dezenas, DX = unidades
+    add AL, '0'
+    mov TEMPO_TEXTO[0], AL                  ; primeiro caractere
+    add DL, '0'
+    mov TEMPO_TEXTO[1], DL                  ; segundo caractere
+    
+    mov SI, offset TEMPO_TEXTO
+    mov DI, offset COR_TEMPO
+    mov CX, 6
+    mov DX, 8
+    call ESCREVER_TEXTO
     ret
-DESENHA_SCORE endp
+EXIBE_STATUS endp
 
 ; ---------------------------------------------------------------------
-; INICIA_CRATERAS: esvazia a tabela e sorteia a distancia da primeira cratera.
+; INICIA_OBJETOS: prepara obstaculos, naves e tiros no inicio da partida.
 ; Entrada: SEMENTE inicializada.
-; Saida:   Slots livres, CRATERA_GERADA = 0 e CRATERA_PROX inicializada.
+; Saida:   Slots livres e contadores de criacao preparados.
 ; ---------------------------------------------------------------------
-INICIA_CRATERAS proc
-    mov CRATERA_GERADA, 0
+INICIA_OBJETOS proc
     push AX
     push BX
     push CX
-
+    push BP
+    push DI
+    mov CRATERA_GERADA, 0
     xor BX, BX
     ; O marcador de slot livre ocupa uma word. Depois de limpar a tabela, sorteie a
     ; distancia ate a primeira tentativa.
@@ -2565,11 +2349,44 @@ cratera_zera:
     call ALEATORIO
     mov CRATERA_PROX, AX
 
+    xor BX, BX
+rocha_zera:
+    mov ROCHAS_X[BX], ROCHA_LIVRE
+    add BX, 2
+    cmp BX, NUM_ROCHAS * 2
+    jb  rocha_zera
+
+    ; A distancia inicial combina uma base fixa com a parte sorteada. A criacao
+    ; ainda depende da primeira cratera.
+    mov CX, DIST_VAR_ROCHA
+    call ALEATORIO
+    add AX, 60
+    mov ROCHA_PROX, AX
+
+    xor BX, BX                                  ; BX = slot*2 (acesso a ALIENS_*)
+    xor BP, BP                                  ; BP = slot*TAM_TIRO (acesso a TIROS_ALIENS)
+
+    ; BX percorre flags de duas em duas; BP percorre registros de tiro inteiros.
+    ; Ambos representam a mesma nave.
+ia_loop:
+    mov word ptr ALIENS_ATIVO[BX], 0
+    mov DI, offset TIROS_ALIENS
+    add DI, BP
+    mov word ptr [DI + T_ATIVO], 0
+    add BX, 2
+    add BP, TAM_TIRO
+    cmp BX, NUM_ALIENS*2
+    jb  ia_loop
+
+    mov ALIEN_ATRASO, ALIEN_SPAWN_DELAY
+    mov ALIEN_HIT_FLAG, 0
+    pop DI
+    pop BP
     pop CX
     pop BX
     pop AX
     ret
-INICIA_CRATERAS endp
+INICIA_OBJETOS endp
 
 ; ---------------------------------------------------------------------
 ; ALEATORIO: avanca o gerador xorshift de 16 bits e limita o resultado.
@@ -2606,73 +2423,6 @@ ALEATORIO proc
     pop DX
     ret
 ALEATORIO endp
-
-; ---------------------------------------------------------------------
-; INICIA_ROCHAS: esvazia a tabela e sorteia a distancia inicial das rochas.
-; Entrada: SEMENTE inicializada.
-; Saida:   Slots livres, ROCHA_PROX entre 60 e 60 + DIST_VAR_ROCHA - 1 pixels.
-; ---------------------------------------------------------------------
-INICIA_ROCHAS proc
-    push AX
-    push BX
-    push CX
-
-    xor BX, BX
-rocha_zera:
-    mov ROCHAS_X[BX], ROCHA_LIVRE
-    add BX, 2
-    cmp BX, NUM_ROCHAS * 2
-    jb  rocha_zera
-
-    ; A distancia inicial combina uma base fixa com a parte sorteada. A criacao
-    ; ainda depende da primeira cratera.
-    mov CX, DIST_VAR_ROCHA
-    call ALEATORIO
-    add AX, 60
-    mov ROCHA_PROX, AX
-
-    pop CX
-    pop BX
-    pop AX
-    ret
-INICIA_ROCHAS endp
-
-; ---------------------------------------------------------------------
-; INICIA_ALIENS: desativa as naves e os tiros e arma o primeiro intervalo.
-; Entrada: Nenhum parametro.
-; Saida:   Slots de naves e tiros inativos, ALIEN_ATRASO inicializado e
-;          ALIEN_HIT_FLAG = 0.
-; ---------------------------------------------------------------------
-INICIA_ALIENS proc
-    push AX
-    push BX
-    push BP
-    push DI
-
-    xor BX, BX                                  ; BX = slot*2 (acesso a ALIENS_*)
-    xor BP, BP                                  ; BP = slot*TAM_TIRO (acesso a TIROS_ALIENS)
-
-    ; BX percorre flags de duas em duas; BP percorre registros de tiro inteiros.
-    ; Ambos representam a mesma nave.
-ia_loop:
-    mov word ptr ALIENS_ATIVO[BX], 0
-    mov DI, offset TIROS_ALIENS
-    add DI, BP
-    mov word ptr [DI + T_ATIVO], 0
-    add BX, 2
-    add BP, TAM_TIRO
-    cmp BX, NUM_ALIENS*2
-    jb  ia_loop
-
-    mov ALIEN_ATRASO, ALIEN_SPAWN_DELAY
-    mov ALIEN_HIT_FLAG, 0
-
-    pop DI
-    pop BP
-    pop BX
-    pop AX
-    ret
-INICIA_ALIENS endp
 
 ; ---------------------------------------------------------------------
 ; VERIFICA_TIRO_ROCHAS: testa o tiro frontal contra cada rocha ativa.
@@ -3119,6 +2869,48 @@ ata_ret:
 ATUALIZA_TIROS_ALIENS endp
 
 ; ---------------------------------------------------------------------
+; BUSCA_VAGA_OBSTACULO: confere a borda e localiza um slot livre.
+; Entrada: BX = tabela de posicoes, CX = numero de slots.
+; Saida:   CF = 0 e BX aponta para a vaga; CF = 1 se bloqueado ou cheio.
+; ---------------------------------------------------------------------
+BUSCA_VAGA_OBSTACULO proc
+    push SI
+    xor SI, SI
+    ; Examine primeiro as crateras e depois as rochas. A comparacao com sinal trata
+    ; o marcador 8000h como negativo.
+livre_crateras:
+    cmp CRATERAS_X[SI], LARG_TELA - DIST_ENTRE_OBST
+    jg  livre_ocupado
+    add SI, 2
+    cmp SI, NUM_CRATERAS * 2
+    jb  livre_crateras
+
+    xor SI, SI
+livre_rochas:
+    cmp ROCHAS_X[SI], LARG_TELA - DIST_ENTRE_OBST
+    jg  livre_ocupado
+    add SI, 2
+    cmp SI, NUM_ROCHAS * 2
+    jb  livre_rochas
+
+    ; O valor 8000h marca uma vaga. BX percorre words e LOOP limita a busca a
+    ; quantidade de registros informada.
+busca_slot:
+    cmp word ptr [BX], CRATERA_LIVRE            ; ambas as tabelas usam 8000h
+    je  busca_achou
+    add BX, 2
+    loop busca_slot
+livre_ocupado:
+    stc
+    pop SI
+    ret
+busca_achou:
+    clc
+    pop SI
+    ret
+BUSCA_VAGA_OBSTACULO endp
+
+; ---------------------------------------------------------------------
 ; ROLA_CRATERAS: controla a geracao por distancia e desloca as crateras.
 ; Entrada: CRATERA_PROX, tabela de crateras e ES = segmento do quadro.
 ; Saida:   Distancia e posicoes atualizadas. Slots liberados na saida da tela.
@@ -3135,8 +2927,20 @@ ROLA_CRATERAS proc
     ; criar uma cratera com sucesso.
     sub CRATERA_PROX, VEL_CHAO
     jg  rola_move
-    call CRIA_CRATERA
+    mov BX, offset CRATERAS_X
+    mov CX, NUM_CRATERAS
+    call BUSCA_VAGA_OBSTACULO
     jc  rola_move
+    ; Converta o endereco encontrado em deslocamento na tabela de words. Dividir
+    ; por dois seleciona o tipo na tabela de bytes.
+    sub BX, offset CRATERAS_X                   ; indice em bytes dentro da tabela
+
+    mov CRATERA_GERADA, 1
+    mov CRATERAS_X[BX], LARG_TELA
+    mov CX, 3
+    call ALEATORIO                              ; 0..2
+    shr BX, 1
+    mov CRATERAS_TIPO[BX], AL
     mov CX, DIST_VAR_CRATERA
     call ALEATORIO
     add AX, DIST_MIN_CRATERA
@@ -3191,100 +2995,6 @@ rola_seguinte:
 ROLA_CRATERAS endp
 
 ; ---------------------------------------------------------------------
-; CRIA_CRATERA: tenta criar uma cratera na entrada direita do percurso.
-; Entrada: Tabelas de obstaculos e SEMENTE.
-; Saida:   CF = 0 se criou e marcou CRATERA_GERADA. CF = 1 se a borda ou a tabela
-;          estiver ocupada.
-; ---------------------------------------------------------------------
-CRIA_CRATERA proc
-    push AX
-    push BX
-    push CX
-
-    call ESPACO_LIVRE
-    jc  cria_fim
-
-    mov BX, offset CRATERAS_X
-    mov CX, NUM_CRATERAS
-    call BUSCA_SLOT_LIVRE
-    jc  cria_fim
-    ; Converta o endereco encontrado em deslocamento na tabela de words. Dividir
-    ; por dois seleciona o tipo na tabela de bytes.
-    sub BX, offset CRATERAS_X                   ; indice em bytes dentro da tabela
-
-    mov CRATERA_GERADA, 1
-    mov CRATERAS_X[BX], LARG_TELA
-    mov CX, 3
-    call ALEATORIO                              ; 0..2
-    shr BX, 1
-    mov CRATERAS_TIPO[BX], AL
-    clc
-
-cria_fim:
-    pop CX
-    pop BX
-    pop AX
-    ret
-CRIA_CRATERA endp
-
-; ---------------------------------------------------------------------
-; BUSCA_SLOT_LIVRE: procura a primeira posicao livre na tabela de obstaculos.
-; Entrada: DS:BX = inicio da tabela de words, CX = quantidade positiva.
-; Saida:   CF = 0 e BX aponta para o slot livre. CF = 1 se a tabela esta cheia.
-; ---------------------------------------------------------------------
-BUSCA_SLOT_LIVRE proc
-    ; O valor 8000h marca uma vaga. BX percorre words e LOOP limita a busca a
-    ; quantidade de registros informada.
-busca_slot:
-    cmp word ptr [BX], CRATERA_LIVRE            ; ambas as tabelas usam 8000h
-    je  busca_achou
-    add BX, 2
-    loop busca_slot
-    stc
-    ret
-busca_achou:
-    clc
-    ret
-BUSCA_SLOT_LIVRE endp
-
-; ---------------------------------------------------------------------
-; ESPACO_LIVRE: verifica a distancia dos obstaculos ate a borda direita.
-; Entrada: Tabelas CRATERAS_X e ROCHAS_X.
-; Saida:   CF = 0 se ha espaco para criar um obstaculo, CF = 1 se ocupado.
-; ---------------------------------------------------------------------
-ESPACO_LIVRE proc
-    push BX
-
-    xor BX, BX
-    ; Examine primeiro as crateras e depois as rochas. A comparacao com sinal trata
-    ; o marcador 8000h como negativo.
-livre_crateras:
-    cmp CRATERAS_X[BX], LARG_TELA - DIST_ENTRE_OBST
-    jg  livre_ocupado
-    add BX, 2
-    cmp BX, NUM_CRATERAS * 2
-    jb  livre_crateras
-
-    xor BX, BX
-livre_rochas:
-    cmp ROCHAS_X[BX], LARG_TELA - DIST_ENTRE_OBST
-    jg  livre_ocupado
-    add BX, 2
-    cmp BX, NUM_ROCHAS * 2
-    jb  livre_rochas
-
-    clc
-    jmp livre_fim
-
-livre_ocupado:
-    stc
-
-livre_fim:
-    pop BX
-    ret
-ESPACO_LIVRE endp
-
-; ---------------------------------------------------------------------
 ; ROLA_ROCHAS: controla a geracao por distancia e desloca as rochas.
 ; Entrada: ROCHA_PROX, tabela de rochas e ES = segmento do quadro.
 ; Saida:   Distancia e posicoes atualizadas. Slots liberados na saida da tela.
@@ -3299,8 +3009,23 @@ ROLA_ROCHAS proc
 
     sub ROCHA_PROX, VEL_CHAO
     jg  rocha_move
-    call CRIA_ROCHA
+    ; Exija uma cratera anterior e folga ate a proxima. So depois procure uma vaga
+    ; e sorteie a variante.
+    cmp CRATERA_GERADA, 0                       ; a primeira rocha precisa de uma cratera anterior
+    je  rocha_move
+    cmp CRATERA_PROX, DIST_ENTRE_OBST + LARGURA_ROCHA
+    jl  rocha_move                        ; reserva espaco antes da proxima cratera
+    mov BX, offset ROCHAS_X
+    mov CX, NUM_ROCHAS
+    call BUSCA_VAGA_OBSTACULO
     jc  rocha_move
+    sub BX, offset ROCHAS_X                     ; indice em bytes dentro da tabela
+
+    mov ROCHAS_X[BX], LARG_TELA
+    mov CX, 4
+    call ALEATORIO                              ; 0..3
+    shr BX, 1
+    mov ROCHAS_TIPO[BX], AL
     mov CX, DIST_VAR_ROCHA
     call ALEATORIO
     add AX, DIST_MIN_ROCHA
@@ -3355,49 +3080,6 @@ rocha_seguinte:
     pop AX
     ret
 ROLA_ROCHAS endp
-
-; ---------------------------------------------------------------------
-; CRIA_ROCHA: tenta colocar uma rocha no intervalo entre crateras.
-; Entrada: CRATERA_GERADA, CRATERA_PROX, tabelas de obstaculos e SEMENTE.
-; Saida:   CF = 0 se criou uma das quatro variantes. CF = 1 se as condicoes de
-;          geracao impedem a criacao.
-; ---------------------------------------------------------------------
-CRIA_ROCHA proc
-    push AX
-    push BX
-    push CX
-
-    ; Exija uma cratera anterior e folga ate a proxima. So depois procure uma vaga
-    ; e sorteie a variante.
-    cmp CRATERA_GERADA, 0                       ; a primeira rocha precisa de uma cratera anterior
-    je  rocha_sem_espaco
-    cmp CRATERA_PROX, DIST_ENTRE_OBST + LARGURA_ROCHA
-    jl  rocha_sem_espaco                        ; reserva espaco antes da proxima cratera
-    call ESPACO_LIVRE
-    jc  rocha_cria_fim
-
-    mov BX, offset ROCHAS_X
-    mov CX, NUM_ROCHAS
-    call BUSCA_SLOT_LIVRE
-    jc  rocha_cria_fim
-    sub BX, offset ROCHAS_X                     ; indice em bytes dentro da tabela
-
-    mov ROCHAS_X[BX], LARG_TELA
-    mov CX, 4
-    call ALEATORIO                              ; 0..3
-    shr BX, 1
-    mov ROCHAS_TIPO[BX], AL
-    clc
-
-    jmp rocha_cria_fim
-rocha_sem_espaco:
-    stc
-rocha_cria_fim:
-    pop CX
-    pop BX
-    pop AX
-    ret
-CRIA_ROCHA endp
 
 ; ---------------------------------------------------------------------
 ; ROLA_ALIENS: move as naves ativas ou conta o atraso para o novo grupo.
@@ -3942,23 +3624,6 @@ bitmap_fim:
 COLISAO_BITMAP_ROCHA endp
 
 ; ---------------------------------------------------------------------
-; DEC_CORACAO: desconta a vida perdida na colisao.
-; Entrada: VIDAS = quantidade positiva antes do impacto.
-; Saida:   VIDAS decrementada. CF = 1 se chegou a zero, CF = 0 se ainda ha vidas.
-; ---------------------------------------------------------------------
-DEC_CORACAO proc
-    ; O resultado zero identifica a ultima vida. O chamador consulta CF para
-    ; escolher entre reaparecer e terminar.
-    dec VIDAS
-    jnz dec_ainda_vivo
-    stc                                         ; ultima vida consumida
-    ret
-dec_ainda_vivo:
-    clc
-    ret
-DEC_CORACAO endp
-
-; ---------------------------------------------------------------------
 ; CONTAGEM_TEMPO: converte ticks da BIOS em segundos de partida.
 ; Entrada: TEMPO_DECORRIDO = referencia anterior, TEMPO_FRACAO = saldo,
 ;          TEMPO_INICIAL = segundos restantes.
@@ -3994,35 +3659,10 @@ tempo_tick:
     ; AL guarda se algum segundo foi consumido. Converta o mostrador uma unica vez,
     ; mesmo que varios ticks tenham passado.
 tempo_retorna:
-    test AL, AL
-    jz  tempo_fim
-    call FORMATA_TEMPO
-    mov AL, 1
-tempo_fim:
     pop DX
     pop BX
     ret
 CONTAGEM_TEMPO endp
-
-; ---------------------------------------------------------------------
-; FORMATA_TEMPO: converte o tempo restante para o mostrador decimal.
-; Entrada: TEMPO_INICIAL = segundos entre 0 e 99.
-; Saida:   TEMPO_TEXTO recebe os caracteres das dezenas e unidades.
-; ---------------------------------------------------------------------
-FORMATA_TEMPO proc
-    mov AX, TEMPO_INICIAL
-    xor DX, DX
-    ; Com DX zerado, DIV separa quociente e resto. Somar '0' transforma cada valor
-    ; em um caractere do mostrador.
-    mov BX, 10
-    div BX                                      ; AL = dezenas, DL = unidades
-    add AL, '0'
-    mov TEMPO_TEXTO[0], AL
-    add DL, '0'
-    mov TEMPO_TEXTO[1], DL
-
-    ret
-FORMATA_TEMPO endp
 
 ; ---------------------------------------------------------------------
 ; DISPARAR: tenta acionar os dois canhoes de forma independente.
@@ -4095,7 +3735,43 @@ jipe_limite_dir:
 jipe_grava_x:
     mov JIPE_X, BX
 
-    call ATUALIZA_SALTO
+    cmp SALTO_FASE, 0
+    je  jipe_desenha
+    cmp SALTO_FASE, 2
+    je  salto_topo
+    ja  salto_descida
+
+    ; fase 1: subindo
+    mov AX, JIPE_ALT
+    add AX, SALTO_VEL
+    cmp AX, SALTO_ALTURA
+    jl  salto_grava
+    mov AX, SALTO_ALTURA
+    mov SALTO_FASE, 2
+    mov SALTO_PX, 0
+    jmp salto_grava
+
+salto_topo:
+    ; Fase 2: mantenha a altura e conte os pixels percorridos pelo cenario.
+    add SALTO_PX, VEL_CHAO
+    cmp SALTO_PX, SALTO_TOPO_PX
+    jb  jipe_desenha
+    mov SALTO_FASE, 3
+    jmp jipe_desenha
+
+salto_descida:
+    mov AX, JIPE_ALT
+    sub AX, SALTO_VEL
+    jg  salto_grava
+
+    xor AX, AX                               ; chegou ao chao
+    mov SALTO_FASE, 0
+    mov SALTO_VX, 0                          ; encerra o movimento lateral do salto
+
+salto_grava:
+    mov JIPE_ALT, AX
+
+jipe_desenha:
 
     mov AX, JIPE_X
     mov ASCII_X, AX
@@ -4115,51 +3791,6 @@ jipe_grava_x:
     pop AX
     ret
 MOVER_JIPE endp
-
-; ---------------------------------------------------------------------
-; ATUALIZA_SALTO: avanca uma etapa do salto trapezoidal.
-; Entrada: SALTO_FASE, JIPE_ALT e distancia acumulada em SALTO_PX.
-; Saida:   Altura, fase e distancia de topo atualizadas para o quadro.
-; ---------------------------------------------------------------------
-ATUALIZA_SALTO proc
-    cmp SALTO_FASE, 0
-    je  salto_fim
-    cmp SALTO_FASE, 2
-    je  salto_topo
-    ja  salto_descida
-
-    ; fase 1: subindo
-    mov AX, JIPE_ALT
-    add AX, SALTO_VEL
-    cmp AX, SALTO_ALTURA
-    jl  salto_grava
-    mov AX, SALTO_ALTURA
-    mov SALTO_FASE, 2
-    mov SALTO_PX, 0
-    jmp salto_grava
-
-salto_topo:
-    ; Fase 2: mantenha a altura e conte os pixels percorridos pelo cenario.
-    add SALTO_PX, VEL_CHAO
-    cmp SALTO_PX, SALTO_TOPO_PX
-    jb  salto_fim
-    mov SALTO_FASE, 3
-    jmp salto_fim
-
-salto_descida:
-    ; fase 3: descendo
-    mov AX, JIPE_ALT
-    sub AX, SALTO_VEL
-    jg  salto_grava
-    xor AX, AX
-    mov SALTO_FASE, 0
-
-salto_grava:
-    mov JIPE_ALT, AX
-
-salto_fim:
-    ret
-ATUALIZA_SALTO endp
 
 ; ---------------------------------------------------------------------
 ; GAME_OVER: exibe a arte de fim de jogo, a instrucao e o score final.
@@ -4202,55 +3833,36 @@ GAME_OVER proc
 GAME_OVER endp
 
 ; ---------------------------------------------------------------------
-; start: inicializa os segmentos, instala o teclado e coordena as telas.
-; Entrada: Ponto de entrada do executavel DOS.
-; Saida:   Ao escolher Sair, restaura o vetor salvo, ativa modo texto e devolve o
-;          controle ao DOS.
+; start
 ; ---------------------------------------------------------------------
 start:
     mov AX, @data
     mov DS, AX
-
-    mov AX, 0A000H
+    mov AX, 0A000H                              ; AX recebe o segmento da memoria de video VGA
     mov ES, AX
-    cld
 
-    ; O servico 35h do DOS devolve o vetor em ES:BX. O servico 25h recebe o novo
-    ; tratador em DS:DX.
-    mov AX, 3509H                               ; salva handler anterior da INT 09h
-    int 21H
-    mov CS:[OLD_INT09_OFF], BX
-    mov CS:[OLD_INT09_SEG], ES
+    ;seleciona o modo grafico VGA de 320 x 200 e 256 cores.
+    mov AX, 0013H               ; AH seleciona o servico de troca de modo da BIOS e AL identifica o modo 13h.
+    int 10H
+    
+    ; melhoria na leitura de repeti??o ao segurar tecla, menor atraso
+    mov AX, 0305H            ; AH=03h: configura repeticao, AL=05h: usa BH e BL
+    xor BX, BX               ; BH=0: menor atraso; BL=0: repeticao mais rapida
+    int 16H
 
-    push DS
-    mov DX, offset TRATA_TECLADO
-    mov AX, SEG TRATA_TECLADO
-    mov DS, AX
-    mov AX, 2509H                               ; instala TRATA_TECLADO
-    int 21H
-    pop DS
-
-    call MODO_VIDEO
-
-    ; Jogar prepara a semente, inicializa a partida e termina em GAME_OVER. Sair
-    ; segue para restaurar o vetor e o modo texto.
 menu:
-    call LIMPAR_TELA
     call MENU_INICIAL
-    cmp OPCAO_SEL, 0
-    jne fim_programa                            ; 1 = Sair
-    call INICIA_ALEATORIO
-    call NOVO_JOGO
+    cmp OPCAO_SEL, 0    ; 1 = Sair
+    jne fim_programa
+    
     call INICIA_JOGO
     call GAME_OVER
+    call LIMPAR_TELA
     jmp menu
 
 fim_programa:
-    ; Devolve o teclado ao DOS antes de liberar o codigo do jogo.
-    mov DX, CS:[OLD_INT09_OFF]
-    mov DS, CS:[OLD_INT09_SEG]
-    mov AX, 2509H
-    int 21H
+    mov AX, 0300H            ; restaura a repeticao padrao da BIOS
+    int 16H
     mov AX, 0003H                               ; volta ao modo texto
     int 10H
     mov AX, 4C00H
